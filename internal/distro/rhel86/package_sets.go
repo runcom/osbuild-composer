@@ -451,7 +451,7 @@ func edgeCommitPackageSet(t *imageType) rpmmd.PackageSet {
 			"container-selinux", "skopeo", "criu", "slirp4netns",
 			"fuse-overlayfs", "clevis", "clevis-dracut", "clevis-luks",
 			"greenboot", "greenboot-grub2", "greenboot-rpm-ostree-grub2",
-			"greenboot-reboot", "greenboot-status",
+			"greenboot-reboot", "greenboot-status", "fdo-client", "fdo-owner-cli",
 		},
 		Exclude: []string{"rng-tools"},
 	}
@@ -747,6 +747,7 @@ func edgeSimplifiedInstallerPackageSet(t *imageType) rpmmd.PackageSet {
 			"cloud-utils-growpart",
 			"coreos-installer",
 			"coreos-installer-dracut",
+			"fdo-init",
 			"coreutils",
 			"device-mapper-multipath",
 			"dnsmasq",

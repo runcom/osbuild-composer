@@ -765,6 +765,8 @@ func edgeCommitPackageSet(t *imageType) rpmmd.PackageSet {
 			"greenboot-rpm-ostree-grub2",
 			"greenboot-reboot",
 			"greenboot-status",
+			"fdo-client",
+			"fdo-owner-cli",
 		},
 		Exclude: []string{
 			"rng-tools",
@@ -1125,6 +1127,7 @@ func edgeSimplifiedInstallerPackageSet(t *imageType) rpmmd.PackageSet {
 			"cloud-utils-growpart",
 			"coreos-installer",
 			"coreos-installer-dracut",
+			"fdo-init",
 			"coreutils",
 			"device-mapper-multipath",
 			"dnsmasq",

@@ -497,11 +497,33 @@ func (t *imageType) checkOptions(customizations *blueprint.Customizations, optio
 		}
 
 		if t.name == "edge-simplified-installer" {
-			if err := customizations.CheckAllowed("InstallationDevice"); err != nil {
+			if err := customizations.CheckAllowed("InstallationDevice", "FDO"); err != nil {
 				return fmt.Errorf("boot ISO image type %q contains unsupported blueprint customizations: %v", t.name, err)
 			}
 			if customizations.GetInstallationDevice() == "" {
 				return fmt.Errorf("boot ISO image type %q requires specifying an installation device to install to", t.name)
+			}
+			if customizations.GetFDO() == nil {
+				return fmt.Errorf("boot ISO image type %q requires specifying FDO configuration to install to", t.name)
+			}
+			if customizations.GetFDO().ManufacturingServerURL == "" {
+				return fmt.Errorf("boot ISO image type %q requires specifying FDO.ManufacturingServerURL configuration to install to", t.name)
+			}
+			var diunSet int
+			if customizations.GetFDO().DiunPubKeyHash != "" {
+				diunSet++
+			}
+			if customizations.GetFDO().DiunPubKeyInsecure != "" {
+				diunSet++
+			}
+			if customizations.GetFDO().DiunPubKeyRootCerts != "" {
+				diunSet++
+			}
+			if diunSet == 0 {
+				return fmt.Errorf("boot ISO image type %q requires specifying one of [FDO.DiunPubKeyHash,FDO.DiunPubKeyInsecure,DiunPubKeyRootCerts] configuration to install to", t.name)
+			}
+			if diunSet > 1 {
+				return fmt.Errorf("boot ISO image type %q requires specifying just one of [FDO.DiunPubKeyHash,FDO.DiunPubKeyInsecure,DiunPubKeyRootCerts] configuration to install to", t.name)
 			}
 		} else if customizations != nil {
 			return fmt.Errorf("boot ISO image type %q does not support blueprint customizations", t.name)
@@ -589,7 +611,8 @@ func newDistro(distroName string) distro.Distro {
 
 	// Shared Services
 	edgeServices := []string{
-		"NetworkManager.service", "firewalld.service", "sshd.service",
+		// TODO(runcom): move fdo-client-linuxapp.service to presets?
+		"NetworkManager.service", "firewalld.service", "sshd.service", "fdo-client-linuxapp.service",
 	}
 
 	// Image Definitions

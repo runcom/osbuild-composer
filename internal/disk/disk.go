@@ -345,6 +345,14 @@ func (pt *PartitionTable) getPartitionTableSize() uint64 {
 	return size
 }
 
+// Grow the partition to the given size in sectors. Will do nothing
+// if the partition is larger than the requested size.
+func (p *Partition) GrowTo(sectors uint64) {
+	if p.Size < sectors {
+		p.Size = sectors
+	}
+}
+
 // Converts Partition to osbuild.QEMUPartition that encodes the same partition.
 func (p *Partition) QEMUPartition() osbuild.QEMUPartition {
 	var fs *osbuild.QEMUFilesystem

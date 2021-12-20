@@ -1470,7 +1470,7 @@
                   "type": "41"
                 },
                 {
-                  "size": 20961180,
+                  "size": 20961280,
                   "start": 10240
                 }
               ]
@@ -1495,7 +1495,7 @@
                 "options": {
                   "filename": "disk.img",
                   "start": 10240,
-                  "size": 20961180
+                  "size": 20961280
                 }
               }
             }
@@ -1525,7 +1525,7 @@
                 "options": {
                   "filename": "disk.img",
                   "start": 10240,
-                  "size": 20961180
+                  "size": 20961280
                 }
               }
             },

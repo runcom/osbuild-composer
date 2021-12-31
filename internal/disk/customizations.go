@@ -42,7 +42,10 @@ func CreatePartitionTable(
 		if part != nil {
 			part.GrowTo(sectors)
 		} else {
-			table.CreateFilesystem(m.Mountpoint, sectors)
+			err := table.CreateFilesystem(m.Mountpoint, sectors)
+			if err != nil {
+				return PartitionTable{}, err
+			}
 		}
 	}
 

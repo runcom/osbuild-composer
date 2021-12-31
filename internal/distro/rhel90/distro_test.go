@@ -651,8 +651,12 @@ func TestDistro_CustomFileSystemSubDirectories(t *testing.T) {
 		for _, imgTypeName := range arch.ListImageTypes() {
 			imgType, _ := arch.GetImageType(imgTypeName)
 			_, err := imgType.Manifest(bp.Customizations, distro.ImageOptions{}, nil, nil, 0)
+			layout := imgType.PartitionType()
 			if strings.HasPrefix(imgTypeName, "edge-") {
 				continue
+			} else if layout == "dos" && arch.Name() == distro.Ppc64leArchName {
+				// PPC64LE uses mbr and has 3 partitions defined in the base layout
+				assert.EqualError(t, err, "maximum number of partitions reached (4)")
 			} else {
 				assert.NoError(t, err)
 			}
@@ -689,10 +693,13 @@ func TestDistro_MountpointsWithArbitraryDepthAllowed(t *testing.T) {
 		for _, imgTypeName := range arch.ListImageTypes() {
 			imgType, _ := arch.GetImageType(imgTypeName)
 			_, err := imgType.Manifest(bp.Customizations, distro.ImageOptions{}, nil, nil, 0)
-			if strings.HasPrefix(imgTypeName, "edge-") {
+			layout := imgType.PartitionType()
+			if layout == "" || strings.HasPrefix(imgTypeName, "edge-") {
 				continue
-			} else {
+			} else if layout == "gpt" {
 				assert.NoError(t, err)
+			} else {
+				assert.EqualError(t, err, "maximum number of partitions reached (4)")
 			}
 		}
 	}

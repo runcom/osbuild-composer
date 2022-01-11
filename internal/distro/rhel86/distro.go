@@ -578,8 +578,7 @@ func newDistro(distroName string) distro.Distro {
 
 	// Shared Services
 	edgeServices := []string{
-		// TODO(runcom): move fdo-client-linuxapp.service to presets?
-		"NetworkManager.service", "firewalld.service", "sshd.service", "fdo-client-linuxapp.service",
+		"NetworkManager.service", "firewalld.service", "sshd.service",
 	}
 
 	// Image Definitions

@@ -404,6 +404,13 @@ groups = []
 
 [customizations]
 installation_device = "/dev/vda"
+
+[customizations.fdo]
+
+# the IP might be wrong...
+
+manufacturing_server_url="http://192.168.100.1:8080"
+diun_pub_key_insecure="true"
 EOF
 
 greenprint "📄 installer blueprint"
@@ -455,6 +462,15 @@ sudo sed -i 's/coreos.inst.image_file=\/run\/media\/iso\/disk.img.xz/coreos.inst
 greenprint "📋 Create libvirt image disk"
 LIBVIRT_IMAGE_PATH=/var/lib/libvirt/images/${IMAGE_KEY}.qcow2
 sudo qemu-img create -f qcow2 "${LIBVIRT_IMAGE_PATH}" 20G
+
+git clone https://github.com/runcom/fdo-containers && cd fdo-containers && ./create-keys.sh && \
+    sudo podman run -d \
+    -v $PWD/ownership_vouchers:/etc/fdo/ownership_vouchers \
+    -v $PWD/config/rendezvous-info.yml:/etc/fdo/rendezvous-info.yml \
+    -v $PWD/config/manufacturing-server.yml:/etc/fdo/manufacturing-server.yml \
+    -v $PWD/keys:/etc/fdo/keys \
+    -p 0.0.0.0:8080:8080 \
+    quay.io/runcom/fdo-manufacturing-server:0.2.0
 
 greenprint "📋 Install edge vm via http boot"
 sudo virt-install --name="${IMAGE_KEY}-http"\

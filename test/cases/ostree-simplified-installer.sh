@@ -279,6 +279,23 @@ sudo ostree --repo="$PROD_REPO" remote add --no-gpg-verify edge-stage "$STAGE_RE
 greenprint "🔧 Prepare stage repo network"
 sudo podman network inspect edge >/dev/null 2>&1 || sudo podman network create --driver=bridge --subnet=192.168.200.0/24 --gateway=192.168.200.254 edge
 
+###########################################################
+##
+## Prepare fdo server
+##
+###########################################################
+sudo git clone https://github.com/runcom/fdo-containers
+sudo cd fdo-containers/
+./create-keys.sh
+sudo setenforce 0
+sudo podman run -d -v $PWD/ownership_vouchers:/etc/fdo/ownership_vouchers -v $PWD/config/rendezvous-info.yml:/etc/fdo/rendezvous-info.yml -v $PWD/config/manufacturing-server.yml:/etc/fdo/manufacturing-server.yml -v $PWD/keys:/etc/fdo/keys --ip 192.168.200.2 --name fdo-server --network edge quay.io/runcom/fdo-manufacturing-server:0.2.0
+sudo cd ..
+
+# Wait for fdo server to be running
+until [ "$(curl -X POST http://192.168.200.2:8080/ping)" == "pong" ]; do
+    sleep 1;
+done;
+
 ##########################################################
 ##
 ## Build edge-container image and start it in podman
@@ -296,9 +313,6 @@ groups = []
 [[packages]]
 name = "python3"
 version = "*"
-
-[customizations.kernel]
-name = "kernel-rt"
 
 [[customizations.user]]
 name = "admin"
@@ -404,6 +418,11 @@ groups = []
 
 [customizations]
 installation_device = "/dev/vda"
+
+[customizations.fdo]
+# the IP might be wrong...
+manufacturing_server_url="http://192.168.200.2:8080"
+diun_pub_key_insecure="true"
 EOF
 
 greenprint "📄 installer blueprint"

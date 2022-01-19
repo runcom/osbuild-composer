@@ -293,18 +293,18 @@ func bootISOMonoStageOptions(kernelVer, arch, vendor, product, osVersion, isolab
 	}
 }
 
-func grubISOStageOptions(installDevice, kernelVer, arch, vendor, product, osVersion, isolabel string) *osbuild.GrubISOStageOptions {
+func grubISOStageOptions(installDevice, kernelVer, arch, vendor, product, osVersion, isolabel string, fdo *blueprint.FDOCustomization) *osbuild.GrubISOStageOptions {
 	var architectures []string
 
 	if arch == "x86_64" {
-		architectures = []string{"IA32", "X64"}
+		architectures = []string{"X64"}
 	} else if arch == "aarch64" {
 		architectures = []string{"AA64"}
 	} else {
 		panic("unsupported architecture")
 	}
 
-	return &osbuild.GrubISOStageOptions{
+	grubISOStageOptions := &osbuild.GrubISOStageOptions{
 		Product: osbuild.Product{
 			Name:    product,
 			Version: osVersion,
@@ -321,6 +321,19 @@ func grubISOStageOptions(installDevice, kernelVer, arch, vendor, product, osVers
 		Architectures: architectures,
 		Vendor:        vendor,
 	}
+
+	grubISOStageOptions.Kernel.Opts = append(grubISOStageOptions.Kernel.Opts, "fdo.manufacturing_server_url="+fdo.ManufacturingServerURL)
+	if fdo.DiunPubKeyInsecure != "" {
+		grubISOStageOptions.Kernel.Opts = append(grubISOStageOptions.Kernel.Opts, "fdo.diun_pub_key_insecure="+fdo.DiunPubKeyInsecure)
+	}
+	if fdo.DiunPubKeyHash != "" {
+		grubISOStageOptions.Kernel.Opts = append(grubISOStageOptions.Kernel.Opts, "fdo.diun_pub_key_hash="+fdo.DiunPubKeyHash)
+	}
+	if fdo.DiunPubKeyRootCerts != "" {
+		grubISOStageOptions.Kernel.Opts = append(grubISOStageOptions.Kernel.Opts, "fdo.diun_pub_key_root_certs=/fdo_diun_root_certs.pem")
+	}
+
+	return grubISOStageOptions
 }
 
 func discinfoStageOptions(arch string) *osbuild.DiscinfoStageOptions {

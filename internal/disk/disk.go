@@ -24,6 +24,47 @@ const (
 	DefaultGrainBytes = uint64(1024 * 1024) // 1 MiB
 )
 
+type Entity interface {
+	IsContainer() bool
+}
+
+type Container interface {
+	Entity
+	GetItemCount() uint
+	GetChild(n uint) Entity
+}
+
+type Sizeable interface {
+	EnsureSize(size uint64) bool
+	GetSize() uint64
+}
+
+type Mountable interface {
+	GetMountpoint() string
+	GetFSType() string
+	GetFSSpec() FSSpec
+	GetFSTabOptions() FSTabOptions
+}
+
+type VolumeContainer interface {
+	CreateVolume(mountpoint string, size uint64) (Entity, error)
+}
+
+// FSSpec for a filesystem (UUID and Label); the first field of fstab(5)
+type FSSpec struct {
+	UUID  string
+	Label string
+}
+
+type FSTabOptions struct {
+	// The fourth field of fstab(5); fs_mntops
+	MntOps string
+	// The fifth field of fstab(5); fs_freq
+	Freq uint64
+	// The sixth field of fstab(5); fs_passno
+	PassNo uint64
+}
+
 type PartitionTable struct {
 	Size       uint64 // Size of the disk (in bytes).
 	UUID       string // Unique identifier of the partition table (GPT only).

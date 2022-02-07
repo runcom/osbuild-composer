@@ -14,6 +14,10 @@ type Partition struct {
 	Filesystem *Filesystem
 }
 
+func (p *Partition) IsContainer() bool {
+	return true
+}
+
 // Grow the partition to the given size in sectors. Will do nothing
 // if the partition is larger than the requested size.
 func (p *Partition) GrowTo(sectors uint64) {

@@ -1086,8 +1086,8 @@ func mkfsStages(pt *disk.PartitionTable, device *osbuild.Device) []*osbuild2.Sta
 		stageDevice := osbuild.NewLoopbackDevice(
 			&osbuild.LoopbackDeviceOptions{
 				Filename: devOptions.Filename,
-				Start:    p.Start,
-				Size:     p.Size,
+				Start:    pt.BytesToSectors(p.Start),
+				Size:     pt.BytesToSectors(p.Size),
 			},
 		)
 		switch p.Filesystem.Type {

@@ -60,3 +60,15 @@ func (p *Partition) GetChild(n uint) Entity {
 	}
 	return p.Filesystem
 }
+
+func (p *Partition) GetSize() uint64 {
+	return p.Size
+}
+
+func (p *Partition) EnsureSize(s uint64) bool {
+	if s > p.Size {
+		p.Size = s
+		return true
+	}
+	return false
+}

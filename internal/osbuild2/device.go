@@ -1,6 +1,7 @@
 package osbuild2
 
 import (
+	"path/filepath"
 	"strings"
 
 	"github.com/osbuild/osbuild-composer/internal/disk"
@@ -25,7 +26,7 @@ func deviceName(p disk.Entity) string {
 
 	switch payload := p.(type) {
 	case disk.Mountable:
-		return pathdot(payload.GetMountpoint())
+		return pathToName(payload.GetMountpoint())
 	case *disk.LUKSContainer:
 		return "luks-" + payload.UUID[:4]
 	case *disk.LVMVolumeGroup:
@@ -78,12 +79,12 @@ func getDevices(path []disk.Entity, filename string) (map[string]Device, string)
 	return do, parent
 }
 
-func pathdot(path string) string {
+func pathToName(path string) string {
 	if path == "/" {
 		return "root"
 	}
 
 	path = strings.TrimLeft(path, "/")
-
-	return strings.ReplaceAll(path, "/", ".")
+	return filepath.Base(path)
+	// return strings.ReplaceAll(path, "/", ".")  TODO: use this to avoid collisions with base names
 }

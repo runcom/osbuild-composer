@@ -521,7 +521,7 @@ func osPipeline(t *imageType,
 
 	if pt != nil {
 		p = prependKernelCmdlineStage(p, t, pt)
-		p.AddStage(osbuild.NewFSTabStage(pt.FSTabStageOptionsV2()))
+		p.AddStage(osbuild.NewFSTabStage(osbuild.GenFSTabStageOptions(pt)))
 		kernelVer := kernelVerStr(bpPackages, c.GetKernel().Name, t.Arch().Name())
 		p.AddStage(bootloaderConfigStage(t, *pt, c.GetKernel(), kernelVer, false, false))
 	}
@@ -843,7 +843,7 @@ func ostreeDeployPipeline(
 		},
 	))
 
-	fstabOptions := pt.FSTabStageOptionsV2()
+	fstabOptions := osbuild.GenFSTabStageOptions(pt)
 	fstabOptions.OSTree = &osbuild.OSTreeFstab{
 		Deployment: osbuild.OSTreeDeployment{
 			OSName: osname,

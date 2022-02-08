@@ -20,6 +20,7 @@ const (
 
 type Entity interface {
 	IsContainer() bool
+	Clone() Entity
 }
 
 type Container interface {

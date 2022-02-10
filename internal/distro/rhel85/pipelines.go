@@ -1291,7 +1291,7 @@ func bootloaderInstStage(filename string, pt *disk.PartitionTable, arch *archite
 	}
 
 	if arch.name == distro.S390xArchName {
-		return osbuild.NewZiplInstStage(ziplInstStageOptions(kernelVer, pt), disk, devices, mounts)
+		return osbuild.NewZiplInstStage(osbuild.GenZiplInstStageOptions(kernelVer, pt), disk, devices, mounts)
 	}
 
 	return nil

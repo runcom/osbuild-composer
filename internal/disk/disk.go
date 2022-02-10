@@ -7,6 +7,7 @@ package disk
 import (
 	"encoding/hex"
 	"io"
+	"math/rand"
 
 	"github.com/google/uuid"
 )
@@ -58,6 +59,11 @@ type Mountable interface {
 
 type VolumeContainer interface {
 	CreateVolume(mountpoint string, size uint64) (Entity, error)
+}
+
+type UniqueEntity interface {
+	Entity
+	GenUUID(rng *rand.Rand)
 }
 
 // FSSpec for a filesystem (UUID and Label); the first field of fstab(5)

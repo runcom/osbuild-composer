@@ -59,10 +59,14 @@ func GenGrub2StageOptions(pt *disk.PartitionTable,
 		if partition.Payload == nil {
 			continue
 		}
-		if partition.Payload.GetMountpoint() == "/boot" {
-			bootFs = partition.Payload
-		} else if partition.Payload.GetMountpoint() == "/" {
-			rootFs = partition.Payload
+		mnt, isMountable := partition.Payload.(disk.Mountable)
+		if !isMountable {
+			continue
+		}
+		if mnt.GetMountpoint() == "/boot" {
+			bootFs = mnt
+		} else if mnt.GetMountpoint() == "/" {
+			rootFs = mnt
 		}
 	}
 

@@ -15,7 +15,7 @@ type Partition struct {
 	UUID string
 
 	// If nil, the partition is raw; It doesn't contain a payload.
-	Payload *Filesystem
+	Payload Entity
 }
 
 func (p *Partition) IsContainer() bool {
@@ -24,27 +24,22 @@ func (p *Partition) IsContainer() bool {
 
 func (p *Partition) Clone() Entity {
 	if p == nil {
-		return p
+		return nil
 	}
 
-	ent := p.Payload.Clone()
-	var fs *Filesystem
-	if ent != nil {
-		fsEnt, cloneOk := ent.(*Filesystem)
-		if !cloneOk {
-			panic("Filesystem.Clone() returned an Entity that cannot be converted to *Filesystem; this is a programming error")
-		}
-		fs = fsEnt
-	}
-
-	return &Partition{
+	partition := &Partition{
 		Start:    p.Start,
 		Size:     p.Size,
 		Type:     p.Type,
 		Bootable: p.Bootable,
 		UUID:     p.UUID,
-		Payload:  fs,
 	}
+
+	if p.Payload != nil {
+		partition.Payload = p.Payload.Clone()
+	}
+
+	return partition
 }
 
 // Grow the partition to the given size in sectors. Will do nothing
@@ -56,7 +51,7 @@ func (p *Partition) GrowTo(sectors uint64) {
 }
 
 func (pt *Partition) GetItemCount() uint {
-	if pt.Payload == nil {
+	if pt == nil || pt.Payload == nil {
 		return 0
 	}
 	return 1

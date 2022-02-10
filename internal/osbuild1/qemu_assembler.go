@@ -70,7 +70,8 @@ func GenQEMUAssemblerOptions(pt *disk.PartitionTable) QEMUAssemblerOptions {
 func GenQEMUPartition(p *disk.Partition) QEMUPartition {
 	var fs *QEMUFilesystem
 	if p.Payload != nil {
-		f := GenQEMUFilesystem(p.Payload)
+		// NOTE: Partition Payload for QEMU assembler should always be a Filesystem
+		f := GenQEMUFilesystem(p.Payload.(*disk.Filesystem))
 		fs = &f
 	}
 	return QEMUPartition{

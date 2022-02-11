@@ -708,10 +708,7 @@ func simplifiedInstallerBootISOTreePipeline(archivePipelineName, kver string) *o
 	}
 
 	filename := "images/efiboot.img"
-	loopback := osbuild.NewLoopbackDevice(&osbuild.LoopbackDeviceOptions{Filename: filename})
-	p.AddStage(osbuild.NewTruncateStage(&osbuild.TruncateStageOptions{Filename: filename, Size: fmt.Sprintf("%d", pt.Size)}))
-
-	for _, stage := range osbuild.GenMkfsStages(&pt, loopback) {
+	for _, stage := range osbuild.GenImagePrepareStages(&pt, filename) {
 		p.AddStage(stage)
 	}
 

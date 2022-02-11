@@ -223,13 +223,17 @@ var edgeBasePartitionTables = distro.BasePartitionTableMap{
 			{
 				Type: disk.FilesystemDataGUID,
 				UUID: disk.RootPartitionUUID,
-				Payload: &disk.Filesystem{
-					Type:         "xfs",
-					Label:        "root",
-					Mountpoint:   "/",
-					FSTabOptions: "defaults",
-					FSTabFreq:    0,
-					FSTabPassNo:  0,
+				Payload: &disk.LUKSContainer{
+					UUID: "",
+					Label: "crypt_root",
+					Payload: &disk.Filesystem{
+						Type:         "xfs",
+						Label:        "root",
+						Mountpoint:   "/",
+						FSTabOptions: "defaults",
+						FSTabFreq:    0,
+						FSTabPassNo:  0,
+					},
 				},
 			},
 		},
@@ -268,13 +272,17 @@ var edgeBasePartitionTables = distro.BasePartitionTableMap{
 			{
 				Type: disk.FilesystemDataGUID,
 				UUID: disk.RootPartitionUUID,
-				Payload: &disk.Filesystem{
-					Type:         "xfs",
-					Label:        "root",
-					Mountpoint:   "/",
-					FSTabOptions: "defaults",
-					FSTabFreq:    0,
-					FSTabPassNo:  0,
+				Payload: &disk.LUKSContainer{
+					UUID: "",
+					Label: "crypt_root",
+					Payload: &disk.Filesystem{
+						Type:         "xfs",
+						Label:        "root",
+						Mountpoint:   "/",
+						FSTabOptions: "defaults",
+						FSTabFreq:    0,
+						FSTabPassNo:  0,
+					},
 				},
 			},
 		},

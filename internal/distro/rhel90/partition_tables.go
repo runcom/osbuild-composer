@@ -203,13 +203,23 @@ var edgeBasePartitionTables = distro.BasePartitionTableMap{
 			{
 				Type: disk.FilesystemDataGUID,
 				UUID: disk.RootPartitionUUID,
-				Payload: &disk.Filesystem{
-					Type:         "xfs",
-					Label:        "root",
-					Mountpoint:   "/",
-					FSTabOptions: "defaults",
-					FSTabFreq:    0,
-					FSTabPassNo:  0,
+				Payload: &disk.LUKSContainer{
+					Label: "crypt_root",
+					Cipher: "cipher_null",
+					Passphrase: "osbuild",
+					PBKDF: disk.Argon2id{
+						Memory: 32,
+						Iterations: 4,
+						Parallelism: 1,
+					},
+					Payload: &disk.Filesystem{
+						Type:         "xfs",
+						Label:        "root",
+						Mountpoint:   "/",
+						FSTabOptions: "defaults",
+						FSTabFreq:    0,
+						FSTabPassNo:  0,
+					},
 				},
 			},
 		},
@@ -248,13 +258,17 @@ var edgeBasePartitionTables = distro.BasePartitionTableMap{
 			{
 				Type: disk.FilesystemDataGUID,
 				UUID: disk.RootPartitionUUID,
-				Payload: &disk.Filesystem{
-					Type:         "xfs",
-					Label:        "root",
-					Mountpoint:   "/",
-					FSTabOptions: "defaults",
-					FSTabFreq:    0,
-					FSTabPassNo:  0,
+				Payload: &disk.LUKSContainer{
+					UUID: "",
+					Label: "crypt_root",
+					Payload: &disk.Filesystem{
+						Type:         "xfs",
+						Label:        "root",
+						Mountpoint:   "/",
+						FSTabOptions: "defaults",
+						FSTabFreq:    0,
+						FSTabPassNo:  0,
+					},
 				},
 			},
 		},

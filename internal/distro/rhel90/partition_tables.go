@@ -204,13 +204,17 @@ var edgeBasePartitionTables = distro.BasePartitionTableMap{
 				Type: disk.FilesystemDataGUID,
 				UUID: disk.RootPartitionUUID,
 				Payload: &disk.LUKSContainer{
-					Label: "crypt_root",
-					Cipher: "cipher_null",
+					Label:      "crypt_root",
+					Cipher:     "cipher_null",
 					Passphrase: "osbuild",
 					PBKDF: disk.Argon2id{
-						Memory: 32,
-						Iterations: 4,
+						Memory:      32,
+						Iterations:  4,
 						Parallelism: 1,
+					},
+					Clevis: &disk.ClevisBind{
+						Pin:    "null",
+						Policy: "{}",
 					},
 					Payload: &disk.Filesystem{
 						Type:         "xfs",
@@ -259,8 +263,18 @@ var edgeBasePartitionTables = distro.BasePartitionTableMap{
 				Type: disk.FilesystemDataGUID,
 				UUID: disk.RootPartitionUUID,
 				Payload: &disk.LUKSContainer{
-					UUID: "",
-					Label: "crypt_root",
+					Label:      "crypt_root",
+					Cipher:     "cipher_null",
+					Passphrase: "osbuild",
+					PBKDF: disk.Argon2id{
+						Memory:      32,
+						Iterations:  4,
+						Parallelism: 1,
+					},
+					Clevis: &disk.ClevisBind{
+						Pin:    "null",
+						Policy: "{}",
+					},
 					Payload: &disk.Filesystem{
 						Type:         "xfs",
 						Label:        "root",

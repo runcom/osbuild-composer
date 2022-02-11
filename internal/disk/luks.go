@@ -12,6 +12,11 @@ type Argon2id struct {
 	Memory      uint
 	Parallelism uint
 }
+
+type ClevisBind struct {
+	Pin string
+	Policy string
+}
 type LUKSContainer struct {
 	Passphrase string
 	UUID       string
@@ -22,6 +27,8 @@ type LUKSContainer struct {
 
 	// password-based key derivation function
 	PBKDF Argon2id
+
+	Clevis *ClevisBind
 
 	Payload Entity
 }

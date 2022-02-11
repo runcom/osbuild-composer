@@ -55,6 +55,14 @@ func GenDeviceCreationStages(pt *disk.PartitionTable, filename string) []*Stage 
 
 			stages = append(stages, stage)
 
+			if ent.Clevis != nil {
+				stages = append(stages, NewClevisLuksBindStage(&ClevisLuksBindStageOptions{
+					Passphrase: ent.Passphrase,
+					Pin:        ent.Clevis.Pin,
+					Policy:     ent.Clevis.Policy,
+				}, stageDevices))
+			}
+
 		case *disk.LVMVolumeGroup:
 			// do not include us when getting the devices
 			stageDevices, lastName := getDevices(path[:len(path)-1], filename)

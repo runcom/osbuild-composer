@@ -69,6 +69,11 @@ func (lc *LUKSContainer) Clone() Entity {
 			Memory:      lc.PBKDF.Memory,
 			Parallelism: lc.PBKDF.Parallelism,
 		},
+		Clevis: &ClevisBind{
+			Pin:              lc.Clevis.Pin,
+			Policy:           lc.Clevis.Policy,
+			RemovePassphrase: lc.Clevis.RemovePassphrase,
+		},
 		Payload: lc.Payload,
 	}
 }

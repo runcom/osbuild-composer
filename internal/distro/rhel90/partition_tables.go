@@ -213,8 +213,9 @@ var edgeBasePartitionTables = distro.BasePartitionTableMap{
 						Parallelism: 1,
 					},
 					Clevis: &disk.ClevisBind{
-						Pin:    "null",
-						Policy: "{}",
+						Pin:              "null",
+						Policy:           "{}",
+						RemovePassphrase: true,
 					},
 					Payload: &disk.Filesystem{
 						Type:         "xfs",
@@ -272,8 +273,9 @@ var edgeBasePartitionTables = distro.BasePartitionTableMap{
 						Parallelism: 1,
 					},
 					Clevis: &disk.ClevisBind{
-						Pin:    "null",
-						Policy: "{}",
+						Pin:              "null",
+						Policy:           "{}",
+						RemovePassphrase: true,
 					},
 					Payload: &disk.Filesystem{
 						Type:         "xfs",

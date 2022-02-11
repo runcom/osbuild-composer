@@ -61,6 +61,11 @@ func GenDeviceCreationStages(pt *disk.PartitionTable, filename string) []*Stage 
 					Pin:        ent.Clevis.Pin,
 					Policy:     ent.Clevis.Policy,
 				}, stageDevices))
+				if ent.Clevis.RemovePassphrase {
+					stages = append(stages, NewLUKS2RemoveKeyStage(&LUKS2RemoveKeyStageOptions{
+						Passphrase: ent.Passphrase,
+					}, stage.Devices))
+				}
 			}
 
 		case *disk.LVMVolumeGroup:

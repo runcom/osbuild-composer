@@ -14,8 +14,9 @@ type Argon2id struct {
 }
 
 type ClevisBind struct {
-	Pin string
-	Policy string
+	Pin              string
+	Policy           string
+	RemovePassphrase bool
 }
 type LUKSContainer struct {
 	Passphrase string

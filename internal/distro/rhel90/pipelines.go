@@ -302,7 +302,7 @@ func edgeImagePipelines(t *imageType, filename string, options distro.ImageOptio
 	}
 
 	// prepare ostree deployment tree
-	treePipeline := ostreeDeployPipeline(t, partitionTable, ostreeRepoPath, rng, options)
+	treePipeline := ostreeDeployPipeline(t, partitionTable, ostreeRepoPath, rng, options, true)
 	pipelines = append(pipelines, *treePipeline)
 
 	// make raw image from tree
@@ -553,7 +553,7 @@ func osPipeline(t *imageType,
 		p = prependKernelCmdlineStage(p, strings.Join(kernelOptions, " "), pt)
 		p.AddStage(osbuild.NewFSTabStage(osbuild.NewFSTabStageOptions(pt)))
 		kernelVer := rpmmd.GetVerStrFromPackageSpecListPanic(bpPackages, c.GetKernel().Name)
-		bootloader := bootloaderConfigStage(t, *pt, kernelVer, false, false)
+		bootloader := bootloaderConfigStage(t, *pt, kernelVer, false, false, false)
 
 		if cfg := imageConfig.Grub2Config; cfg != nil {
 			if grub2, ok := bootloader.Options.(*osbuild.GRUB2StageOptions); ok {
@@ -565,6 +565,9 @@ func osPipeline(t *imageType,
 	}
 
 	p.AddStage(osbuild.NewSELinuxStage(selinuxStageOptions(false)))
+
+	p.AddStage(osbuild.NewIgnitionFirstbootCompleteStage(&osbuild.IgnitionFirstbootCompleteStageOptions{}))
+	p.AddStage(osbuild.NewIgnitionSetupUserStage(&osbuild.IgnitionSetupUserStageOptions{}))
 
 	if t.rpmOstree {
 		p.AddStage(osbuild.NewOSTreePrepTreeStage(&osbuild.OSTreePrepTreeStageOptions{
@@ -828,6 +831,7 @@ func ostreeDeployPipeline(
 	repoPath string,
 	rng *rand.Rand,
 	options distro.ImageOptions,
+	ignition bool,
 ) *osbuild.Pipeline {
 
 	p := new(osbuild.Pipeline)
@@ -849,6 +853,14 @@ func ostreeDeployPipeline(
 	p.AddStage(osbuild.NewOSTreeConfigStage(ostreeConfigStageOptions(repoPath, true)))
 	p.AddStage(osbuild.NewMkdirStage(efiMkdirStageOptions()))
 	kernelOpts := osbuild.GenImageKernelOptions(pt)
+	// rw is needed to support sysroot.readonly=true in ostree
+	kernelOpts = append(kernelOpts, "rw")
+	if ignition {
+		kernelOpts = append(kernelOpts,
+			"ignition.platform.id=metal",
+			"$ignition_firstboot",
+		)
+	}
 	p.AddStage(osbuild.NewOSTreeDeployStage(
 		&osbuild.OSTreeDeployStageOptions{
 			OsName: osname,
@@ -896,7 +908,10 @@ func ostreeDeployPipeline(
 
 	// TODO: Add users?
 
-	p.AddStage(bootloaderConfigStage(t, *pt, "", true, true))
+	if ignition {
+		p.AddStage(osbuild.NewIgnitionStage(&osbuild.IgnitionStageOptions{}))
+	}
+	p.AddStage(bootloaderConfigStage(t, *pt, "", true, true, ignition))
 
 	p.AddStage(osbuild.NewOSTreeSelinuxStage(
 		&osbuild.OSTreeSelinuxStageOptions{
@@ -1032,7 +1047,7 @@ func qemuPipeline(inputPipelineName, inputFilename, outputFilename, format, qcow
 	return p
 }
 
-func bootloaderConfigStage(t *imageType, partitionTable disk.PartitionTable, kernelVer string, install, greenboot bool) *osbuild.Stage {
+func bootloaderConfigStage(t *imageType, partitionTable disk.PartitionTable, kernelVer string, install, greenboot, ignition bool) *osbuild.Stage {
 	if t.arch.name == distro.S390xArchName {
 		return osbuild.NewZiplStage(new(osbuild.ZiplStageOptions))
 	}
@@ -1042,6 +1057,7 @@ func bootloaderConfigStage(t *imageType, partitionTable disk.PartitionTable, ker
 
 	options := osbuild.NewGrub2StageOptionsUnified(&partitionTable, kernelVer, uefi, legacy, t.arch.distro.vendor, install)
 	options.Greenboot = greenboot
+	options.Ignition = ignition
 
 	return osbuild.NewGRUB2Stage(options)
 }

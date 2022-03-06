@@ -714,6 +714,7 @@ func edgeCommitPackageSet(t *imageType) rpmmd.PackageSet {
 			"nss-altfiles",
 			"dracut-config-generic",
 			"dracut-network",
+			"ignition",
 			"basesystem",
 			"bash",
 			"platform-python",

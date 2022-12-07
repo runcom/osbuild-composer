@@ -12,7 +12,8 @@ import (
 
 // An ISOTree represents a tree containing the anaconda installer,
 // configuration in terms of a kickstart file, as well as an embedded
-// payload to be installed.
+// payload to be installed, this payload can either be an ostree
+// CommitSpec or OSPipeline for an OS.
 type ISOTree struct {
 	Base
 
@@ -28,10 +29,23 @@ type ISOTree struct {
 	rootfsPipeline   *ISORootfsImg
 	bootTreePipeline *EFIBootTree
 
-	KSPath   string
+	// The location of the kickstart file, if it will be added to the
+	// bootiso-tree.
+	// Otherwise, it should be defined in the interactive defaults of the
+	// Anaconda pipeline.
+	KSPath string
+
+	// The path where the payload (tarball or ostree repo) will be stored.
+	PayloadPath string
+
 	isoLabel string
 
-	OSTree *ostree.CommitSpec
+	SquashfsCompression string
+
+	OSPipeline *OS
+	OSTree     *ostree.CommitSpec
+
+	KernelOpts []string
 }
 
 func NewISOTree(m *Manifest,
@@ -61,6 +75,7 @@ func (p *ISOTree) getOSTreeCommits() []ostree.CommitSpec {
 	if p.OSTree == nil {
 		return nil
 	}
+
 	return []ostree.CommitSpec{
 		*p.OSTree,
 	}
@@ -68,17 +83,44 @@ func (p *ISOTree) getOSTreeCommits() []ostree.CommitSpec {
 
 func (p *ISOTree) getBuildPackages() []string {
 	packages := []string{
-		"rpm-ostree",
 		"squashfs-tools",
 	}
+
+	if p.OSTree != nil {
+		packages = append(packages, "rpm-ostree")
+	}
+
+	if p.OSPipeline != nil {
+		packages = append(packages, "tar")
+	}
+
 	return packages
 }
 
 func (p *ISOTree) serialize() osbuild.Pipeline {
+	// We need one of two payloads
+	if p.OSTree == nil && p.OSPipeline == nil {
+		panic("missing ostree or ospipeline parameters in ISO tree pipeline")
+	}
+
+	// But not both payloads
+	if p.OSTree != nil && p.OSPipeline != nil {
+		panic("got both ostree and ospipeline parameters in ISO tree pipeline")
+	}
+
 	pipeline := p.Base.serialize()
 
-	ostreeRepoPath := "/ostree/repo"
-	kernelOpts := fmt.Sprintf("inst.ks=hd:LABEL=%s:%s", p.isoLabel, p.KSPath)
+	kernelOpts := []string{}
+
+	if p.KSPath != "" {
+		kernelOpts = append(kernelOpts, fmt.Sprintf("inst.ks=hd:LABEL=%s:%s", p.isoLabel, p.KSPath))
+	} else {
+		kernelOpts = append(kernelOpts, fmt.Sprintf("inst.stage2=hd:LABEL=%s", p.isoLabel))
+	}
+
+	if len(p.KernelOpts) > 0 {
+		kernelOpts = append(kernelOpts, p.KernelOpts...)
+	}
 
 	pipeline.AddStage(osbuild.NewMkdirStage(&osbuild.MkdirStageOptions{
 		Paths: []osbuild.Path{
@@ -110,10 +152,21 @@ func (p *ISOTree) serialize() osbuild.Pipeline {
 
 	squashfsOptions := osbuild.SquashfsStageOptions{
 		Filename: "images/install.img",
-		Compression: osbuild.FSCompression{
-			Method: "lz4",
-		},
 	}
+
+	if p.SquashfsCompression != "" {
+		squashfsOptions.Compression.Method = p.SquashfsCompression
+	} else {
+		// default to xz if not specified
+		squashfsOptions.Compression.Method = "xz"
+	}
+
+	if squashfsOptions.Compression.Method == "xz" {
+		squashfsOptions.Compression.Options = &osbuild.FSCompressionOptions{
+			BCJ: osbuild.BCJOption(p.anacondaPipeline.platform.GetArch().String()),
+		}
+	}
+
 	squashfsStage := osbuild.NewSquashfsStage(&squashfsOptions, p.rootfsPipeline.Name())
 	pipeline.AddStage(squashfsStage)
 
@@ -124,7 +177,7 @@ func (p *ISOTree) serialize() osbuild.Pipeline {
 		},
 		Kernel: osbuild.ISOLinuxKernel{
 			Dir:  "/images/pxeboot",
-			Opts: []string{kernelOpts},
+			Opts: kernelOpts,
 		},
 	}
 	isoLinuxStage := osbuild.NewISOLinuxStage(isoLinuxOptions, p.anacondaPipeline.Name())
@@ -159,21 +212,40 @@ func (p *ISOTree) serialize() osbuild.Pipeline {
 		copyInputs,
 	))
 
-	if p.OSTree == nil {
-		panic("missing ostree parameters in ISO tree pipeline")
-	}
-	kickstartOptions, err := osbuild.NewKickstartStageOptions(p.KSPath, "", p.Users, p.Groups, makeISORootPath(ostreeRepoPath), p.OSTree.Ref, p.OSName)
-	if err != nil {
-		panic("password encryption failed")
+	if p.OSTree != nil {
+		// Set up the payload ostree repo
+		pipeline.AddStage(osbuild.NewOSTreeInitStage(&osbuild.OSTreeInitStageOptions{Path: p.PayloadPath}))
+		pipeline.AddStage(osbuild.NewOSTreePullStage(
+			&osbuild.OSTreePullStageOptions{Repo: p.PayloadPath},
+			osbuild.NewOstreePullStageInputs("org.osbuild.source", p.OSTree.Checksum, p.OSTree.Ref),
+		))
+
+		// Configure the kickstart file with the payload and any user options
+		kickstartOptions, err := osbuild.NewKickstartStageOptions(p.KSPath, "", p.Users, p.Groups, makeISORootPath(p.PayloadPath), p.OSTree.Ref, p.OSName)
+
+		if err != nil {
+			panic("failed to create kickstartstage options")
+		}
+
+		pipeline.AddStage(osbuild.NewKickstartStage(kickstartOptions))
 	}
 
-	pipeline.AddStage(osbuild.NewOSTreeInitStage(&osbuild.OSTreeInitStageOptions{Path: ostreeRepoPath}))
-	pipeline.AddStage(osbuild.NewOSTreePullStage(
-		&osbuild.OSTreePullStageOptions{Repo: ostreeRepoPath},
-		osbuild.NewOstreePullStageInputs("org.osbuild.source", p.OSTree.Checksum, p.OSTree.Ref),
-	))
+	if p.OSPipeline != nil {
+		// Create the payload tarball
+		pipeline.AddStage(osbuild.NewTarStage(&osbuild.TarStageOptions{Filename: p.PayloadPath}, p.OSPipeline.name))
 
-	pipeline.AddStage(osbuild.NewKickstartStage(kickstartOptions))
+		// If the KSPath is set, we need to add the kickstart stage to this (bootiso-tree) pipeline.
+		// If it's not specified here, it should have been added to the InteractiveDefaults in the anaconda-tree.
+		if p.KSPath != "" {
+			kickstartOptions, err := osbuild.NewKickstartStageOptions(p.KSPath, makeISORootPath(p.PayloadPath), p.Users, p.Groups, "", "", p.OSName)
+			if err != nil {
+				panic("failed to create kickstartstage options")
+			}
+
+			pipeline.AddStage(osbuild.NewKickstartStage(kickstartOptions))
+		}
+	}
+
 	pipeline.AddStage(osbuild.NewDiscinfoStage(&osbuild.DiscinfoStageOptions{
 		BaseArch: p.anacondaPipeline.platform.GetArch().String(),
 		Release:  p.Release,

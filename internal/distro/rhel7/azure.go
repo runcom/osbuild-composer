@@ -12,7 +12,7 @@ import (
 )
 
 func azureRhuiCommonPackageSet(t *imageType) rpmmd.PackageSet {
-	return rpmmd.PackageSet{
+	ps := rpmmd.PackageSet{
 		Include: []string{
 			"@base",
 			"@core",
@@ -53,6 +53,16 @@ func azureRhuiCommonPackageSet(t *imageType) rpmmd.PackageSet {
 			"postfix",
 		},
 	}.Append(bootPackageSet(t))
+
+	if t.arch.distro.isRHEL() {
+		ps = ps.Append(rpmmd.PackageSet{
+			Include: []string{
+				"insights-client",
+			},
+		})
+	}
+
+	return ps
 }
 
 var azureRhuiBasePartitionTables = distro.BasePartitionTableMap{
@@ -403,7 +413,7 @@ var azureRhuiImgType = imageType{
 	},
 	kernelOptions:       "ro crashkernel=auto console=tty1 console=ttyS0 earlyprintk=ttyS0 rootdelay=300 scsi_mod.use_blk_mq=y",
 	bootable:            true,
-	defaultSize:         68719476736,
+	defaultSize:         64 * common.GibiByte,
 	pipelines:           vhdPipelines(true),
 	buildPipelines:      []string{"build"},
 	payloadPipelines:    []string{"os", "image", "vpc", "archive"},

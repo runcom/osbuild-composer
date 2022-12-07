@@ -2555,7 +2555,8 @@
             "options": {
               "file_contexts": "etc/selinux/targeted/contexts/files/file_contexts",
               "labels": {
-                "/usr/bin/cp": "system_u:object_r:install_exec_t:s0"
+                "/usr/bin/cp": "system_u:object_r:install_exec_t:s0",
+                "/usr/bin/tar": "system_u:object_r:install_exec_t:s0"
               }
             }
           }
@@ -10627,7 +10628,7 @@
               "kernel": {
                 "dir": "/images/pxeboot",
                 "opts": [
-                  "inst.ks=hd:LABEL=Fedora-36-BaseOS-aarch64:/ostree.ks"
+                  "inst.ks=hd:LABEL=Fedora-36-BaseOS-aarch64:/osbuild.ks"
                 ]
               },
               "isolabel": "Fedora-36-BaseOS-aarch64",
@@ -10717,7 +10718,7 @@
               "kernel": {
                 "dir": "/images/pxeboot",
                 "opts": [
-                  "inst.ks=hd:LABEL=Fedora-36-BaseOS-aarch64:/ostree.ks"
+                  "inst.ks=hd:LABEL=Fedora-36-BaseOS-aarch64:/osbuild.ks"
                 ]
               }
             }
@@ -10828,7 +10829,7 @@
           {
             "type": "org.osbuild.kickstart",
             "options": {
-              "path": "/ostree.ks",
+              "path": "/osbuild.ks",
               "ostree": {
                 "osname": "fedora",
                 "url": "file:///run/install/repo/ostree/repo",

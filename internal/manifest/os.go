@@ -5,9 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/osbuild/osbuild-composer/internal/blueprint"
 	"github.com/osbuild/osbuild-composer/internal/common"
+	"github.com/osbuild/osbuild-composer/internal/container"
 	"github.com/osbuild/osbuild-composer/internal/disk"
+	"github.com/osbuild/osbuild-composer/internal/distro"
 	"github.com/osbuild/osbuild-composer/internal/environment"
 	"github.com/osbuild/osbuild-composer/internal/osbuild"
 	"github.com/osbuild/osbuild-composer/internal/ostree"
@@ -24,29 +25,36 @@ import (
 //       abstractions, this should ideally only contain things that
 //       can always be applied.
 type OSCustomizations struct {
+
 	// Packages to install in addition to the ones required by the
 	// pipeline.
 	ExtraBasePackages []string
+
 	// Packages to exclude from the base package set. This is useful in
 	// case of weak dependencies, comps groups, or where multiple packages
 	// can satisfy a dependency. Must not conflict with the included base
 	// package set.
 	ExcludeBasePackages []string
+
 	// Additional repos to install the base packages from.
 	ExtraBaseRepos []rpmmd.RepoConfig
+
+	// Containers to embed in the image
+	Containers []container.Spec
+
 	// KernelName indicates that a kernel is installed, and names the kernel
 	// package.
 	KernelName string
+
 	// KernelOptionsAppend are appended to the kernel commandline
 	KernelOptionsAppend []string
-	// UEFIVendor indicates whether or not the image should support UEFI and
-	// if set namespaces the UEFI binaries with this string.
+
 	GPGKeyFiles      []string
 	Language         string
 	Keyboard         *string
+	X11KeymapLayouts []string
 	Hostname         string
 	Timezone         string
-	NTPServers       []string
 	EnabledServices  []string
 	DisabledServices []string
 	DefaultTarget    string
@@ -60,27 +68,37 @@ type OSCustomizations struct {
 
 	Groups []users.Group
 	Users  []users.User
-	// TODO: drop blueprint types from the API
-	Firewall *blueprint.FirewallCustomization
 	// TODO: drop osbuild types from the API
-	Grub2Config    *osbuild.GRUB2Config
-	Sysconfig      []*osbuild.SysconfigStageOptions
-	SystemdLogind  []*osbuild.SystemdLogindStageOptions
-	CloudInit      []*osbuild.CloudInitStageOptions
-	Modprobe       []*osbuild.ModprobeStageOptions
-	DracutConf     []*osbuild.DracutConfStageOptions
-	SystemdUnit    []*osbuild.SystemdUnitStageOptions
-	Authselect     *osbuild.AuthselectStageOptions
-	SELinuxConfig  *osbuild.SELinuxConfigStageOptions
-	Tuned          *osbuild.TunedStageOptions
-	Tmpfilesd      []*osbuild.TmpfilesdStageOptions
-	PamLimitsConf  []*osbuild.PamLimitsConfStageOptions
-	Sysctld        []*osbuild.SysctldStageOptions
-	DNFConfig      []*osbuild.DNFConfigStageOptions
-	SshdConfig     *osbuild.SshdConfigStageOptions
-	AuthConfig     *osbuild.AuthconfigStageOptions
-	PwQuality      *osbuild.PwqualityConfStageOptions
-	OpenSCAPConfig *osbuild.OscapRemediationStageOptions
+	Firewall            *osbuild.FirewallStageOptions
+	Grub2Config         *osbuild.GRUB2Config
+	Sysconfig           []*osbuild.SysconfigStageOptions
+	SystemdLogind       []*osbuild.SystemdLogindStageOptions
+	CloudInit           []*osbuild.CloudInitStageOptions
+	Modprobe            []*osbuild.ModprobeStageOptions
+	DracutConf          []*osbuild.DracutConfStageOptions
+	SystemdUnit         []*osbuild.SystemdUnitStageOptions
+	Authselect          *osbuild.AuthselectStageOptions
+	SELinuxConfig       *osbuild.SELinuxConfigStageOptions
+	Tuned               *osbuild.TunedStageOptions
+	Tmpfilesd           []*osbuild.TmpfilesdStageOptions
+	PamLimitsConf       []*osbuild.PamLimitsConfStageOptions
+	Sysctld             []*osbuild.SysctldStageOptions
+	DNFConfig           []*osbuild.DNFConfigStageOptions
+	DNFAutomaticConfig  *osbuild.DNFAutomaticConfigStageOptions
+	YUMRepos            []*osbuild.YumReposStageOptions
+	SshdConfig          *osbuild.SshdConfigStageOptions
+	GCPGuestAgentConfig *osbuild.GcpGuestAgentConfigOptions
+	AuthConfig          *osbuild.AuthconfigStageOptions
+	PwQuality           *osbuild.PwqualityConfStageOptions
+	OpenSCAPConfig      *osbuild.OscapRemediationStageOptions
+	NTPServers          []osbuild.ChronyConfigServer
+	WAAgentConfig       *osbuild.WAAgentConfStageOptions
+	UdevRules           *osbuild.UdevRulesStageOptions
+	LeapSecTZ           *string
+	FactAPIType         string
+
+	Subscription *distro.SubscriptionImageOptions
+	RHSMConfig   map[distro.RHSMSubscriptionStatus]*osbuild.RHSMStageOptions
 }
 
 // OS represents the filesystem tree of the target image. This roughly
@@ -176,14 +194,30 @@ func (p *OS) getPackageSetChain() []rpmmd.PackageSet {
 
 func (p *OS) getBuildPackages() []string {
 	packages := p.platform.GetBuildPackages()
+	if p.PartitionTable != nil {
+		packages = append(packages, p.PartitionTable.GetBuildPackages()...)
+	}
 	packages = append(packages, "rpm")
 	if p.OSTreeRef != "" {
 		packages = append(packages, "rpm-ostree")
 	}
 	if p.SElinux != "" {
-		packages = append(packages, "policycoreutils")
-		packages = append(packages, fmt.Sprintf("selinux-policy-%s", p.SElinux))
+		packages = append(packages, "policycoreutils", fmt.Sprintf("selinux-policy-%s", p.SElinux))
 	}
+	if len(p.CloudInit) > 0 {
+		packages = append(packages, "python3-pyyaml")
+	}
+	if len(p.DNFConfig) > 0 || len(p.RHSMConfig) > 0 {
+		packages = append(packages, "python3-iniparse")
+	}
+
+	if len(p.OSCustomizations.Containers) > 0 {
+		if p.OSTreeRef != "" {
+			packages = append(packages, "python3-toml")
+		}
+		packages = append(packages, "skopeo")
+	}
+
 	return packages
 }
 
@@ -196,6 +230,10 @@ func (p *OS) getOSTreeCommits() []ostree.CommitSpec {
 
 func (p *OS) getPackageSpecs() []rpmmd.PackageSpec {
 	return p.packageSpecs
+}
+
+func (p *OS) getContainerSpecs() []container.Spec {
+	return p.Containers
 }
 
 func (p *OS) serializeStart(packages []rpmmd.PackageSpec) {
@@ -248,17 +286,48 @@ func (p *OS) serialize() osbuild.Pipeline {
 		pipeline.AddStage(osbuild.NewFixBLSStage(&osbuild.FixBLSStageOptions{Prefix: common.StringToPtr("")}))
 	}
 
+	if len(p.Containers) > 0 {
+		images := osbuild.NewContainersInputForSources(p.Containers)
+
+		var storagePath string
+
+		// OSTree commits do not include data in `/var` since that is tied to the
+		// deployment, rather than the commit. Therefore the containers need to be
+		// stored in a different location, like `/usr/share`, and the container
+		// storage engine configured accordingly.
+		if p.OSTreeRef != "" {
+			storagePath = "/usr/share/containers/storage"
+			storageConf := "/etc/containers/storage.conf"
+
+			containerStoreOpts := osbuild.NewContainerStorageOptions(storageConf, storagePath)
+			pipeline.AddStage(osbuild.NewContainersStorageConfStage(containerStoreOpts))
+		}
+
+		skopeo := osbuild.NewSkopeoStage(images, storagePath)
+		pipeline.AddStage(skopeo)
+	}
+
 	pipeline.AddStage(osbuild.NewLocaleStage(&osbuild.LocaleStageOptions{Language: p.Language}))
 
 	if p.Keyboard != nil {
-		pipeline.AddStage(osbuild.NewKeymapStage(&osbuild.KeymapStageOptions{Keymap: *p.Keyboard}))
+		keymapOptions := &osbuild.KeymapStageOptions{Keymap: *p.Keyboard}
+		if len(p.X11KeymapLayouts) > 0 {
+			keymapOptions.X11Keymap = &osbuild.X11KeymapOptions{Layouts: p.X11KeymapLayouts}
+		}
+		pipeline.AddStage(osbuild.NewKeymapStage(keymapOptions))
 	}
 
-	pipeline.AddStage(osbuild.NewHostnameStage(&osbuild.HostnameStageOptions{Hostname: p.Hostname}))
+	if p.Hostname != "" {
+		pipeline.AddStage(osbuild.NewHostnameStage(&osbuild.HostnameStageOptions{Hostname: p.Hostname}))
+	}
 	pipeline.AddStage(osbuild.NewTimezoneStage(&osbuild.TimezoneStageOptions{Zone: p.Timezone}))
 
 	if len(p.NTPServers) > 0 {
-		pipeline.AddStage(osbuild.NewChronyStage(&osbuild.ChronyStageOptions{Timeservers: p.NTPServers}))
+		chronyOptions := &osbuild.ChronyStageOptions{Servers: p.NTPServers}
+		if p.LeapSecTZ != nil {
+			chronyOptions.LeapsecTz = p.LeapSecTZ
+		}
+		pipeline.AddStage(osbuild.NewChronyStage(chronyOptions))
 	}
 
 	if len(p.Groups) > 0 {
@@ -308,16 +377,7 @@ func (p *OS) serialize() osbuild.Pipeline {
 	}
 
 	if p.Firewall != nil {
-		options := osbuild.FirewallStageOptions{
-			Ports: p.Firewall.Ports,
-		}
-
-		if p.Firewall.Services != nil {
-			options.EnabledServices = p.Firewall.Services.Enabled
-			options.DisabledServices = p.Firewall.Services.Disabled
-		}
-
-		pipeline.AddStage(osbuild.NewFirewallStage(&options))
+		pipeline.AddStage(osbuild.NewFirewallStage(p.Firewall))
 	}
 
 	for _, sysconfigConfig := range p.Sysconfig {
@@ -372,6 +432,18 @@ func (p *OS) serialize() osbuild.Pipeline {
 		pipeline.AddStage(osbuild.NewDNFConfigStage(dnfConfig))
 	}
 
+	if p.DNFAutomaticConfig != nil {
+		pipeline.AddStage(osbuild.NewDNFAutomaticConfigStage(p.DNFAutomaticConfig))
+	}
+
+	for _, yumRepo := range p.YUMRepos {
+		pipeline.AddStage(osbuild.NewYumReposStage(yumRepo))
+	}
+
+	if p.GCPGuestAgentConfig != nil {
+		pipeline.AddStage(osbuild.NewGcpGuestAgentConfigStage(p.GCPGuestAgentConfig))
+	}
+
 	if p.SshdConfig != nil {
 		pipeline.AddStage((osbuild.NewSshdConfigStage(p.SshdConfig)))
 	}
@@ -382,6 +454,35 @@ func (p *OS) serialize() osbuild.Pipeline {
 
 	if p.PwQuality != nil {
 		pipeline.AddStage(osbuild.NewPwqualityConfStage(p.PwQuality))
+	}
+
+	if p.Subscription != nil {
+		commands := []string{
+			fmt.Sprintf("/usr/sbin/subscription-manager register --org=%s --activationkey=%s --serverurl %s --baseurl %s", p.Subscription.Organization, p.Subscription.ActivationKey, p.Subscription.ServerUrl, p.Subscription.BaseUrl),
+		}
+		if p.Subscription.Insights {
+			commands = append(commands, "/usr/bin/insights-client --register")
+		}
+		pipeline.AddStage(osbuild.NewFirstBootStage(&osbuild.FirstBootStageOptions{
+			Commands:       commands,
+			WaitForNetwork: true,
+		}))
+
+		if rhsmConfig, exists := p.RHSMConfig[distro.RHSMConfigWithSubscription]; exists {
+			pipeline.AddStage(osbuild.NewRHSMStage(rhsmConfig))
+		}
+	} else {
+		if rhsmConfig, exists := p.RHSMConfig[distro.RHSMConfigNoSubscription]; exists {
+			pipeline.AddStage(osbuild.NewRHSMStage(rhsmConfig))
+		}
+	}
+
+	if waConfig := p.WAAgentConfig; waConfig != nil {
+		pipeline.AddStage(osbuild.NewWAAgentConfStage(waConfig))
+	}
+
+	if udevRules := p.UdevRules; udevRules != nil {
+		pipeline.AddStage(osbuild.NewUdevRulesStage(udevRules))
 	}
 
 	if pt := p.PartitionTable; pt != nil {
@@ -419,6 +520,26 @@ func (p *OS) serialize() osbuild.Pipeline {
 
 	if p.OpenSCAPConfig != nil {
 		pipeline.AddStage(osbuild.NewOscapRemediationStage(p.OpenSCAPConfig))
+	}
+
+	if p.FactAPIType != "" {
+		pipeline.AddStage(osbuild.NewRHSMFactsStage(&osbuild.RHSMFactsStageOptions{
+			Facts: osbuild.RHSMFacts{
+				ApiType: p.FactAPIType,
+			},
+		}))
+	}
+
+	if p.OSTreeRef != "" {
+		pipeline.AddStage(osbuild.NewSystemdJournaldStage(
+			&osbuild.SystemdJournaldStageOptions{
+				Filename: "10-persistent.conf",
+				Config: osbuild.SystemdJournaldConfigDropin{
+					Journal: osbuild.SystemdJournaldConfigJournalSection{
+						Storage: osbuild.StoragePresistent,
+					},
+				},
+			}))
 	}
 
 	if p.SElinux != "" {

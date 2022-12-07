@@ -46,6 +46,7 @@ type repository struct {
 	RHSM           bool     `json:"rhsm,omitempty"`
 	MetadataExpire string   `json:"metadata_expire,omitempty"`
 	ImageTypeTags  []string `json:"image_type_tags,omitempty"`
+	PackageSets    []string `json:"package-sets,omitempty"`
 }
 
 type ostreeOptions struct {
@@ -121,6 +122,12 @@ func makeManifestJob(name string, imgType distro.ImageType, cr composeRequest, d
 			FetchChecksum: cr.OSTree.Parent,
 		}
 	}
+
+	// add RHSM fact to detect changes
+	options.Facts = &distro.FactsImageOptions{
+		ApiType: "test-manifest",
+	}
+
 	job := func(msgq chan string) (err error) {
 		defer func() {
 			msg := fmt.Sprintf("Finished job %s", filename)
@@ -137,9 +144,13 @@ func makeManifestJob(name string, imgType distro.ImageType, cr composeRequest, d
 		}
 
 		containerSpecs, err := resolveContainers(bp.Containers, archName)
-
 		if err != nil {
 			return fmt.Errorf("[%s] container resolution failed: %s", filename, err.Error())
+		}
+
+		if options.OSTree.ImageRef == "" {
+			// use default OSTreeRef for image type
+			options.OSTree.ImageRef = imgType.OSTreeRef()
 		}
 
 		packageSpecs, err := depsolve(cacheDir, imgType, bp, options, repos, distribution, archName)
@@ -150,10 +161,6 @@ func makeManifestJob(name string, imgType distro.ImageType, cr composeRequest, d
 		if packageSpecs == nil {
 			err = fmt.Errorf("[%s] nil package specs", filename)
 			return
-		}
-		if options.OSTree.ImageRef == "" {
-			// use default OSTreeRef for image type
-			options.OSTree.ImageRef = imgType.OSTreeRef()
 		}
 		manifest, err := imgType.Manifest(cr.Blueprint.Customizations, options, repos, packageSpecs, containerSpecs, seedArg)
 		if err != nil {
@@ -169,7 +176,7 @@ func makeManifestJob(name string, imgType distro.ImageType, cr composeRequest, d
 			Blueprint:    cr.Blueprint,
 			OSTree:       cr.OSTree,
 		}
-		err = save(manifest, packageSpecs, request, path, filename)
+		err = save(manifest, packageSpecs, containerSpecs, request, path, filename)
 		return
 	}
 	return job
@@ -241,14 +248,15 @@ func depsolve(cacheDir string, imageType distro.ImageType, bp blueprint.Blueprin
 	return depsolvedSets, nil
 }
 
-func save(manifest distro.Manifest, pkgs map[string][]rpmmd.PackageSpec, cr composeRequest, path, filename string) error {
+func save(manifest distro.Manifest, pkgs map[string][]rpmmd.PackageSpec, containers []container.Spec, cr composeRequest, path, filename string) error {
 	data := struct {
 		ComposeRequest composeRequest                 `json:"compose-request"`
 		Manifest       distro.Manifest                `json:"manifest"`
 		RPMMD          map[string][]rpmmd.PackageSpec `json:"rpmmd"`
+		Containers     []container.Spec               `json:"containers,omitempty"`
 		NoImageInfo    bool                           `json:"no-image-info"`
 	}{
-		cr, manifest, pkgs, true,
+		cr, manifest, pkgs, containers, true,
 	}
 	b, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
@@ -347,7 +355,7 @@ func main() {
 	// common args
 	var outputDir, cacheRoot string
 	var nWorkers int
-	flag.StringVar(&outputDir, "output", "test/data/manifests.plain/", "manifest store directory")
+	flag.StringVar(&outputDir, "output", "test/data/manifests/", "manifest store directory")
 	flag.IntVar(&nWorkers, "workers", 16, "number of workers to run concurrently")
 	flag.StringVar(&cacheRoot, "cache", "/tmp/rpmmd", "rpm metadata cache directory")
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/osbuild/osbuild-composer/internal/blueprint"
 	"github.com/osbuild/osbuild-composer/internal/common"
+	"github.com/osbuild/osbuild-composer/internal/container"
 	"github.com/osbuild/osbuild-composer/internal/distro"
 	"github.com/osbuild/osbuild-composer/internal/image"
 	"github.com/osbuild/osbuild-composer/internal/manifest"
@@ -22,6 +23,7 @@ import (
 func osCustomizations(
 	t *imageType,
 	osPackageSet rpmmd.PackageSet,
+	containers []container.Spec,
 	c *blueprint.Customizations) manifest.OSCustomizations {
 
 	imageConfig := t.getDefaultImageConfig()
@@ -45,6 +47,8 @@ func osCustomizations(
 	osc.ExcludeBasePackages = osPackageSet.Exclude
 	osc.ExtraBaseRepos = osPackageSet.Repositories
 
+	osc.Containers = containers
+
 	osc.GPGKeyFiles = imageConfig.GPGKeyFiles
 	if imageConfig.ExcludeDocs != nil {
 		osc.ExcludeDocs = *imageConfig.ExcludeDocs
@@ -63,7 +67,17 @@ func osCustomizations(
 		osc.DefaultTarget = *imageConfig.DefaultTarget
 	}
 
-	osc.Firewall = c.GetFirewall()
+	if fw := c.GetFirewall(); fw != nil {
+		options := osbuild.FirewallStageOptions{
+			Ports: fw.Ports,
+		}
+
+		if fw.Services != nil {
+			options.EnabledServices = fw.Services.Enabled
+			options.DisabledServices = fw.Services.Disabled
+		}
+		osc.Firewall = &options
+	}
 
 	language, keyboard := c.GetPrimaryLocale()
 	if language != nil {
@@ -91,9 +105,11 @@ func osCustomizations(
 	}
 
 	if len(ntpServers) > 0 {
-		osc.NTPServers = ntpServers
+		for _, server := range ntpServers {
+			osc.NTPServers = append(osc.NTPServers, osbuild.ChronyConfigServer{Hostname: server})
+		}
 	} else if imageConfig.TimeSynchronization != nil {
-		osc.NTPServers = imageConfig.TimeSynchronization.Timeservers
+		osc.NTPServers = imageConfig.TimeSynchronization.Servers
 	}
 
 	// Relabel the tree, unless the `NoSElinux` flag is explicitly set to `true`
@@ -141,11 +157,12 @@ func liveImage(workload workload.Workload,
 	customizations *blueprint.Customizations,
 	options distro.ImageOptions,
 	packageSets map[string]rpmmd.PackageSet,
+	containers []container.Spec,
 	rng *rand.Rand) (image.ImageKind, error) {
 
 	img := image.NewLiveImage()
 	img.Platform = t.platform
-	img.OSCustomizations = osCustomizations(t, packageSets[osPkgsKey], customizations)
+	img.OSCustomizations = osCustomizations(t, packageSets[osPkgsKey], containers, customizations)
 	img.Environment = t.environment
 	img.Workload = workload
 	// TODO: move generation into LiveImage
@@ -165,13 +182,58 @@ func containerImage(workload workload.Workload,
 	c *blueprint.Customizations,
 	options distro.ImageOptions,
 	packageSets map[string]rpmmd.PackageSet,
+	containers []container.Spec,
 	rng *rand.Rand) (image.ImageKind, error) {
 	img := image.NewBaseContainer()
 
 	img.Platform = t.platform
-	img.OSCustomizations = osCustomizations(t, packageSets[osPkgsKey], c)
+	img.OSCustomizations = osCustomizations(t, packageSets[osPkgsKey], containers, c)
 	img.Environment = t.environment
 	img.Workload = workload
+
+	img.Filename = t.Filename()
+
+	return img, nil
+}
+
+func imageInstallerImage(workload workload.Workload,
+	t *imageType,
+	customizations *blueprint.Customizations,
+	options distro.ImageOptions,
+	packageSets map[string]rpmmd.PackageSet,
+	containers []container.Spec,
+	rng *rand.Rand) (image.ImageKind, error) {
+
+	img := image.NewImageInstaller()
+
+	// Enable anaconda-webui for Fedora > 38
+	distro := t.Arch().Distro()
+	if strings.HasPrefix(distro.Name(), "fedora") && !common.VersionLessThan(distro.Releasever(), "38") {
+		img.AdditionalAnacondaModules = []string{
+			"org.fedoraproject.Anaconda.Modules.Security",
+			"org.fedoraproject.Anaconda.Modules.Users",
+			"org.fedoraproject.Anaconda.Modules.Timezone",
+			"org.fedoraproject.Anaconda.Modules.Localization",
+		}
+		img.AdditionalKernelOpts = []string{"inst.webui", "inst.webui.remote"}
+	}
+
+	img.Platform = t.platform
+	img.Workload = workload
+	img.OSCustomizations = osCustomizations(t, packageSets[osPkgsKey], containers, customizations)
+	img.ExtraBasePackages = packageSets[installerPkgsKey]
+	img.Users = users.UsersFromBP(customizations.GetUsers())
+	img.Groups = users.GroupsFromBP(customizations.GetGroups())
+
+	img.SquashfsCompression = "lz4"
+
+	d := t.arch.distro
+
+	img.ISOLabelTempl = d.isolabelTmpl
+	img.Product = d.product
+	img.OSName = "fedora"
+	img.OSVersion = d.osVersion
+	img.Release = fmt.Sprintf("%s %s", d.product, d.osVersion)
 
 	img.Filename = t.Filename()
 
@@ -183,12 +245,13 @@ func iotCommitImage(workload workload.Workload,
 	customizations *blueprint.Customizations,
 	options distro.ImageOptions,
 	packageSets map[string]rpmmd.PackageSet,
+	containers []container.Spec,
 	rng *rand.Rand) (image.ImageKind, error) {
 
 	img := image.NewOSTreeArchive(options.OSTree.ImageRef)
 
 	img.Platform = t.platform
-	img.OSCustomizations = osCustomizations(t, packageSets[osPkgsKey], customizations)
+	img.OSCustomizations = osCustomizations(t, packageSets[osPkgsKey], containers, customizations)
 	img.Environment = t.environment
 	img.Workload = workload
 
@@ -212,12 +275,13 @@ func iotContainerImage(workload workload.Workload,
 	customizations *blueprint.Customizations,
 	options distro.ImageOptions,
 	packageSets map[string]rpmmd.PackageSet,
+	containers []container.Spec,
 	rng *rand.Rand) (image.ImageKind, error) {
 
 	img := image.NewOSTreeContainer(options.OSTree.ImageRef)
 
 	img.Platform = t.platform
-	img.OSCustomizations = osCustomizations(t, packageSets[osPkgsKey], customizations)
+	img.OSCustomizations = osCustomizations(t, packageSets[osPkgsKey], containers, customizations)
 	img.ContainerLanguage = img.OSCustomizations.Language
 	img.Environment = t.environment
 	img.Workload = workload
@@ -244,6 +308,7 @@ func iotInstallerImage(workload workload.Workload,
 	customizations *blueprint.Customizations,
 	options distro.ImageOptions,
 	packageSets map[string]rpmmd.PackageSet,
+	containers []container.Spec,
 	rng *rand.Rand) (image.ImageKind, error) {
 
 	d := t.arch.distro
@@ -260,6 +325,8 @@ func iotInstallerImage(workload workload.Workload,
 	img.ExtraBasePackages = packageSets[installerPkgsKey]
 	img.Users = users.UsersFromBP(customizations.GetUsers())
 	img.Groups = users.GroupsFromBP(customizations.GetGroups())
+
+	img.SquashfsCompression = "lz4"
 
 	img.ISOLabelTempl = d.isolabelTmpl
 	img.Product = d.product
@@ -278,6 +345,7 @@ func iotRawImage(workload workload.Workload,
 	customizations *blueprint.Customizations,
 	options distro.ImageOptions,
 	packageSets map[string]rpmmd.PackageSet,
+	containers []container.Spec,
 	rng *rand.Rand) (image.ImageKind, error) {
 
 	commit := ostree.CommitSpec{

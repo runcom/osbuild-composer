@@ -200,8 +200,8 @@ func tarPipelines(t *imageType, customizations *blueprint.Customizations, option
 	return pipelines, nil
 }
 
-//makeISORootPath return a path that can be used to address files and folders in
-//the root of the iso
+// makeISORootPath return a path that can be used to address files and folders in
+// the root of the iso
 func makeISORootPath(p string) string {
 	fullpath := path.Join("/run/install/repo", p)
 	return fmt.Sprintf("file://%s", fullpath)
@@ -440,7 +440,11 @@ func osPipeline(t *imageType,
 	}
 
 	if len(ntpServers) > 0 {
-		p.AddStage(osbuild.NewChronyStage(&osbuild.ChronyStageOptions{Timeservers: ntpServers}))
+		servers := make([]osbuild.ChronyConfigServer, len(ntpServers))
+		for idx, server := range ntpServers {
+			servers[idx] = osbuild.ChronyConfigServer{Hostname: server}
+		}
+		p.AddStage(osbuild.NewChronyStage(&osbuild.ChronyStageOptions{Servers: servers}))
 	} else if imageConfig.TimeSynchronization != nil {
 		p.AddStage(osbuild.NewChronyStage(imageConfig.TimeSynchronization))
 	}
@@ -493,11 +497,12 @@ func osPipeline(t *imageType,
 		// merge the user-provided firewall config with the default one
 		if fwStageOptions != nil {
 			fwStageOptions = &osbuild.FirewallStageOptions{
-				// Prefer the firewall ports and services settings provided
+				// Prefer the firewall ports, services and zone settings provided
 				// via BP customization.
 				Ports:            fwStageOptions.Ports,
 				EnabledServices:  fwStageOptions.EnabledServices,
 				DisabledServices: fwStageOptions.DisabledServices,
+				Zones:            fwStageOptions.Zones,
 				// Default zone can not be set using BP customizations, therefore
 				// default to the one provided in the default image configuration.
 				DefaultZone: firewallConfig.DefaultZone,
@@ -658,6 +663,19 @@ func osPipeline(t *imageType,
 				ApiType: options.Facts.ApiType,
 			},
 		}))
+	}
+
+	if t.rpmOstree {
+		p.AddStage(osbuild.NewSystemdJournaldStage(
+			&osbuild.SystemdJournaldStageOptions{
+				Filename: "10-persistent.conf",
+				Config: osbuild.SystemdJournaldConfigDropin{
+					Journal: osbuild.SystemdJournaldConfigJournalSection{
+						Storage: osbuild.StoragePresistent,
+					},
+				},
+			},
+		))
 	}
 
 	// Relabel the tree, unless the `NoSElinux` flag is explicitly set to `true`
@@ -901,7 +919,7 @@ func simplifiedInstallerTreePipeline(repos []rpmmd.RepoConfig, packages []rpmmd.
 		"coreos-installer",
 		"fdo",
 	})
-	if fdo.DiunPubKeyRootCerts != "" {
+	if fdo.HasFDO() && fdo.DiunPubKeyRootCerts != "" {
 		p.AddStage(osbuild.NewFDOStageForRootCerts(fdo.DiunPubKeyRootCerts))
 		dracutStageOptions.Install = []string{"/fdo_diun_pub_key_root_certs.pem"}
 	}
@@ -1045,7 +1063,7 @@ func anacondaTreePipeline(repos []rpmmd.RepoConfig, packages []rpmmd.PackageSpec
 	}
 
 	p.AddStage(osbuild.NewUsersStage(usersStageOptions))
-	p.AddStage(osbuild.NewAnacondaStage(osbuild.NewAnacondaStageOptions(users)))
+	p.AddStage(osbuild.NewAnacondaStage(osbuild.NewAnacondaStageOptions(users, []string{})))
 	p.AddStage(osbuild.NewLoraxScriptStage(loraxScriptStageOptions(arch)))
 	p.AddStage(osbuild.NewDracutStage(dracutStageOptions(kernelVer, arch, []string{
 		"anaconda",

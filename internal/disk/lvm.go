@@ -3,7 +3,13 @@ package disk
 import (
 	"fmt"
 	"strings"
+
+	"github.com/osbuild/osbuild-composer/internal/common"
 )
+
+// Default physical extent size in bytes: logical volumes
+// created inside the VG will be aligned to this.
+const LVMDefaultExtentSize = 4 * common.MebiByte
 
 type LVMVolumeGroup struct {
 	Name        string
@@ -61,9 +67,7 @@ func (vg *LVMVolumeGroup) GetChild(n uint) Entity {
 }
 
 func (vg *LVMVolumeGroup) CreateMountpoint(mountpoint string, size uint64) (Entity, error) {
-	if vg == nil {
-		panic("LVMVolumeGroup.CreateMountpoint: nil entity")
-	}
+
 	filesystem := Filesystem{
 		Type:         "xfs",
 		Mountpoint:   mountpoint,
@@ -72,12 +76,20 @@ func (vg *LVMVolumeGroup) CreateMountpoint(mountpoint string, size uint64) (Enti
 		FSTabPassNo:  0,
 	}
 
+	return vg.CreateLogicalVolume(mountpoint, size, &filesystem)
+}
+
+func (vg *LVMVolumeGroup) CreateLogicalVolume(lvName string, size uint64, payload Entity) (Entity, error) {
+	if vg == nil {
+		panic("LVMVolumeGroup.CreateLogicalVolume: nil entity")
+	}
+
 	names := make(map[string]bool, len(vg.LogicalVolumes))
 	for _, lv := range vg.LogicalVolumes {
 		names[lv.Name] = true
 	}
 
-	base := lvname(mountpoint)
+	base := lvname(lvName)
 	var exists bool
 	name := base
 
@@ -99,13 +111,22 @@ func (vg *LVMVolumeGroup) CreateMountpoint(mountpoint string, size uint64) (Enti
 
 	lv := LVMLogicalVolume{
 		Name:    name,
-		Size:    size,
-		Payload: &filesystem,
+		Size:    vg.AlignUp(size),
+		Payload: payload,
 	}
 
 	vg.LogicalVolumes = append(vg.LogicalVolumes, lv)
 
 	return &vg.LogicalVolumes[len(vg.LogicalVolumes)-1], nil
+}
+
+func (vg *LVMVolumeGroup) AlignUp(size uint64) uint64 {
+
+	if size%LVMDefaultExtentSize != 0 {
+		size += LVMDefaultExtentSize - size%LVMDefaultExtentSize
+	}
+
+	return size
 }
 
 func (vg *LVMVolumeGroup) MetadataSize() uint64 {

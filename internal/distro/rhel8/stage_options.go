@@ -76,6 +76,15 @@ func firewallStageOptions(firewall *blueprint.FirewallCustomization) *osbuild.Fi
 		options.DisabledServices = firewall.Services.Disabled
 	}
 
+	if len(firewall.Zones) != 0 {
+		for _, z := range firewall.Zones {
+			options.Zones = append(options.Zones, osbuild.FirewallZone{
+				Name:    *z.Name,
+				Sources: z.Sources,
+			})
+		}
+	}
+
 	return &options
 }
 
@@ -236,19 +245,26 @@ func grubISOStageOptions(installDevice, kernelVer, arch, vendor, product, osVers
 		Vendor:        vendor,
 	}
 
+<<<<<<< HEAD
+	if fdo.HasFDO() {
+		grubISOStageOptions.Kernel.Opts = append(grubISOStageOptions.Kernel.Opts, "fdo.manufacturing_server_url="+fdo.ManufacturingServerURL)
+		if fdo.DiunPubKeyInsecure != "" {
+			grubISOStageOptions.Kernel.Opts = append(grubISOStageOptions.Kernel.Opts, "fdo.diun_pub_key_insecure="+fdo.DiunPubKeyInsecure)
+		}
+		if fdo.DiunPubKeyHash != "" {
+			grubISOStageOptions.Kernel.Opts = append(grubISOStageOptions.Kernel.Opts, "fdo.diun_pub_key_hash="+fdo.DiunPubKeyHash)
+		}
+		if fdo.DiunPubKeyRootCerts != "" {
+			grubISOStageOptions.Kernel.Opts = append(grubISOStageOptions.Kernel.Opts, "fdo.diun_pub_key_root_certs=/fdo_diun_pub_key_root_certs.pem")
+		}
+=======
 	grubISOStageOptions.Config = &osbuild.GRUB2Config{Timeout: timeout}
 
 	grubISOStageOptions.Kernel.Opts = append(grubISOStageOptions.Kernel.Opts, "fdo.manufacturing_server_url="+fdo.ManufacturingServerURL)
 	if fdo.DiunPubKeyInsecure != "" {
 		grubISOStageOptions.Kernel.Opts = append(grubISOStageOptions.Kernel.Opts, "fdo.diun_pub_key_insecure="+fdo.DiunPubKeyInsecure)
+>>>>>>> antonio/grub2iso-timeout
 	}
-	if fdo.DiunPubKeyHash != "" {
-		grubISOStageOptions.Kernel.Opts = append(grubISOStageOptions.Kernel.Opts, "fdo.diun_pub_key_hash="+fdo.DiunPubKeyHash)
-	}
-	if fdo.DiunPubKeyRootCerts != "" {
-		grubISOStageOptions.Kernel.Opts = append(grubISOStageOptions.Kernel.Opts, "fdo.diun_pub_key_root_certs=/fdo_diun_pub_key_root_certs.pem")
-	}
-
 	return grubISOStageOptions
 }
 

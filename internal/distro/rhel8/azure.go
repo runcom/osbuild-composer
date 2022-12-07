@@ -49,7 +49,6 @@ func azureCommonPackageSet(t *imageType) rpmmd.PackageSet {
 		Exclude: []string{
 			"aic94xx-firmware",
 			"alsa-firmware",
-			"alsa-lib",
 			"alsa-sof-firmware",
 			"alsa-tools-firmware",
 			"dracut-config-rescue",
@@ -110,7 +109,11 @@ func azureCommonPackageSet(t *imageType) rpmmd.PackageSet {
 
 // Azure BYOS image package set
 func azurePackageSet(t *imageType) rpmmd.PackageSet {
-	return azureCommonPackageSet(t)
+	return rpmmd.PackageSet{
+		Exclude: []string{
+			"alsa-lib",
+		},
+	}.Append(azureCommonPackageSet(t))
 }
 
 // Azure RHUI image package set
@@ -119,7 +122,21 @@ func azureRhuiPackageSet(t *imageType) rpmmd.PackageSet {
 		Include: []string{
 			"rhui-azure-rhel8",
 		},
+		Exclude: []string{
+			"alsa-lib",
+		},
 	}.Append(azureCommonPackageSet(t))
+}
+
+// Azure SAP image package set
+// Includes the common azure package set, the common SAP packages, and
+// the azure rhui sap package.
+func azureSapPackageSet(t *imageType) rpmmd.PackageSet {
+	return rpmmd.PackageSet{
+		Include: []string{
+			"rhui-azure-rhel8-sap-ha",
+		},
+	}.Append(azureCommonPackageSet(t)).Append(SapPackageSet(t))
 }
 
 // PARTITION TABLES
@@ -564,10 +581,39 @@ var azureRhuiImgType = imageType{
 	defaultImageConfig:  defaultAzureRhuiImageConfig.InheritFrom(defaultAzureImageConfig),
 	kernelOptions:       defaultAzureKernelOptions,
 	bootable:            true,
-	defaultSize:         68719476736,
+	defaultSize:         64 * common.GibiByte,
 	pipelines:           vhdPipelines(true),
 	buildPipelines:      []string{"build"},
 	payloadPipelines:    []string{"os", "image", "vpc", "archive"},
 	exports:             []string{"archive"},
 	basePartitionTables: azureRhuiBasePartitionTables,
+}
+
+func SapAzureImageConfig(rd distribution) *distro.ImageConfig {
+	return SapImageConfig(rd).InheritFrom(defaultAzureImageConfig)
+}
+
+func azureSapImgType(rd distribution) imageType {
+	return imageType{
+		name:     "azure-sap-rhui",
+		filename: "disk.vhd.xz",
+		mimeType: "application/xz",
+		packageSets: map[string]packageSetFunc{
+			// the ec2 buildroot is required due to the cloud-init stage and dependency on YAML
+			buildPkgsKey: ec2BuildPackageSet,
+			osPkgsKey:    azureSapPackageSet,
+		},
+		packageSetChains: map[string][]string{
+			osPkgsKey: {osPkgsKey, blueprintPkgsKey},
+		},
+		defaultImageConfig:  SapAzureImageConfig(rd),
+		kernelOptions:       defaultAzureKernelOptions,
+		bootable:            true,
+		defaultSize:         64 * common.GibiByte,
+		pipelines:           vhdPipelines(true),
+		buildPipelines:      []string{"build"},
+		payloadPipelines:    []string{"os", "image", "vpc", "archive"},
+		exports:             []string{"archive"},
+		basePartitionTables: azureRhuiBasePartitionTables,
+	}
 }

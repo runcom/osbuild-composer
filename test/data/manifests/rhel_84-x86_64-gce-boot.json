@@ -2249,8 +2249,10 @@
           {
             "type": "org.osbuild.chrony",
             "options": {
-              "timeservers": [
-                "metadata.google.internal"
+              "servers": [
+                {
+                  "hostname": "metadata.google.internal"
+                }
               ]
             }
           },
@@ -2407,6 +2409,14 @@
               "saved_entry": "ffffffffffffffffffffffffffffffff-4.18.0-305.el8.x86_64",
               "config": {
                 "default": "saved"
+              }
+            }
+          },
+          {
+            "type": "org.osbuild.rhsm.facts",
+            "options": {
+              "facts": {
+                "image-builder.osbuild-composer.api-type": "test-manifest"
               }
             }
           },

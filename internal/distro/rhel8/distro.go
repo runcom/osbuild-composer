@@ -606,24 +606,24 @@ func (t *imageType) checkOptions(customizations *blueprint.Customizations, optio
 			if customizations.GetInstallationDevice() == "" {
 				return fmt.Errorf("boot ISO image type %q requires specifying an installation device to install to", t.name)
 			}
-			if customizations.GetFDO() == nil {
-				return fmt.Errorf("boot ISO image type %q requires specifying FDO configuration to install to", t.name)
-			}
-			if customizations.GetFDO().ManufacturingServerURL == "" {
-				return fmt.Errorf("boot ISO image type %q requires specifying FDO.ManufacturingServerURL configuration to install to", t.name)
-			}
-			var diunSet int
-			if customizations.GetFDO().DiunPubKeyHash != "" {
-				diunSet++
-			}
-			if customizations.GetFDO().DiunPubKeyInsecure != "" {
-				diunSet++
-			}
-			if customizations.GetFDO().DiunPubKeyRootCerts != "" {
-				diunSet++
-			}
-			if diunSet != 1 {
-				return fmt.Errorf("boot ISO image type %q requires specifying one of [FDO.DiunPubKeyHash,FDO.DiunPubKeyInsecure,FDO.DiunPubKeyRootCerts] configuration to install to", t.name)
+			//making fdo optional so that simplified installer can be composed w/o the FDO section in the blueprint
+			if customizations.GetFDO() != nil {
+				if customizations.GetFDO().ManufacturingServerURL == "" {
+					return fmt.Errorf("boot ISO image type %q requires specifying FDO.ManufacturingServerURL configuration to install to", t.name)
+				}
+				var diunSet int
+				if customizations.GetFDO().DiunPubKeyHash != "" {
+					diunSet++
+				}
+				if customizations.GetFDO().DiunPubKeyInsecure != "" {
+					diunSet++
+				}
+				if customizations.GetFDO().DiunPubKeyRootCerts != "" {
+					diunSet++
+				}
+				if diunSet != 1 {
+					return fmt.Errorf("boot ISO image type %q requires specifying one of [FDO.DiunPubKeyHash,FDO.DiunPubKeyInsecure,FDO.DiunPubKeyRootCerts] configuration to install to", t.name)
+				}
 			}
 		} else if t.name == "edge-installer" {
 			allowed := []string{"User", "Group"}
@@ -1319,115 +1319,7 @@ func newDistro(distroName string) distro.Distro {
 	}
 
 	// default EC2-SAP image config (x86_64)
-	defaultEc2SapImageConfigX86_64 := &distro.ImageConfig{
-		SELinuxConfig: &osbuild.SELinuxConfigStageOptions{
-			State: osbuild.SELinuxStatePermissive,
-		},
-		// RHBZ#1960617
-		Tuned: osbuild.NewTunedStageOptions("sap-hana"),
-		// RHBZ#1959979
-		Tmpfilesd: []*osbuild.TmpfilesdStageOptions{
-			osbuild.NewTmpfilesdStageOptions("sap.conf",
-				[]osbuild.TmpfilesdConfigLine{
-					{
-						Type: "x",
-						Path: "/tmp/.sap*",
-					},
-					{
-						Type: "x",
-						Path: "/tmp/.hdb*lock",
-					},
-					{
-						Type: "x",
-						Path: "/tmp/.trex*lock",
-					},
-				},
-			),
-		},
-		// RHBZ#1959963
-		PamLimitsConf: []*osbuild.PamLimitsConfStageOptions{
-			osbuild.NewPamLimitsConfStageOptions("99-sap.conf",
-				[]osbuild.PamLimitsConfigLine{
-					{
-						Domain: "@sapsys",
-						Type:   osbuild.PamLimitsTypeHard,
-						Item:   osbuild.PamLimitsItemNofile,
-						Value:  osbuild.PamLimitsValueInt(1048576),
-					},
-					{
-						Domain: "@sapsys",
-						Type:   osbuild.PamLimitsTypeSoft,
-						Item:   osbuild.PamLimitsItemNofile,
-						Value:  osbuild.PamLimitsValueInt(1048576),
-					},
-					{
-						Domain: "@dba",
-						Type:   osbuild.PamLimitsTypeHard,
-						Item:   osbuild.PamLimitsItemNofile,
-						Value:  osbuild.PamLimitsValueInt(1048576),
-					},
-					{
-						Domain: "@dba",
-						Type:   osbuild.PamLimitsTypeSoft,
-						Item:   osbuild.PamLimitsItemNofile,
-						Value:  osbuild.PamLimitsValueInt(1048576),
-					},
-					{
-						Domain: "@sapsys",
-						Type:   osbuild.PamLimitsTypeHard,
-						Item:   osbuild.PamLimitsItemNproc,
-						Value:  osbuild.PamLimitsValueUnlimited,
-					},
-					{
-						Domain: "@sapsys",
-						Type:   osbuild.PamLimitsTypeSoft,
-						Item:   osbuild.PamLimitsItemNproc,
-						Value:  osbuild.PamLimitsValueUnlimited,
-					},
-					{
-						Domain: "@dba",
-						Type:   osbuild.PamLimitsTypeHard,
-						Item:   osbuild.PamLimitsItemNproc,
-						Value:  osbuild.PamLimitsValueUnlimited,
-					},
-					{
-						Domain: "@dba",
-						Type:   osbuild.PamLimitsTypeSoft,
-						Item:   osbuild.PamLimitsItemNproc,
-						Value:  osbuild.PamLimitsValueUnlimited,
-					},
-				},
-			),
-		},
-		// RHBZ#1959962
-		Sysctld: []*osbuild.SysctldStageOptions{
-			osbuild.NewSysctldStageOptions("sap.conf",
-				[]osbuild.SysctldConfigLine{
-					{
-						Key:   "kernel.pid_max",
-						Value: "4194304",
-					},
-					{
-						Key:   "vm.max_map_count",
-						Value: "2147483647",
-					},
-				},
-			),
-		},
-		// E4S/EUS
-		DNFConfig: []*osbuild.DNFConfigStageOptions{
-			osbuild.NewDNFConfigStageOptions(
-				[]osbuild.DNFVariable{
-					{
-						Name:  "releasever",
-						Value: rd.osVersion,
-					},
-				},
-				nil,
-			),
-		},
-	}
-	defaultEc2SapImageConfigX86_64 = defaultEc2SapImageConfigX86_64.InheritFrom(defaultEc2ImageConfigX86_64)
+	defaultEc2SapImageConfigX86_64 := SapImageConfig(rd).InheritFrom(defaultEc2ImageConfigX86_64)
 
 	ec2SapImgTypeX86_64 := imageType{
 		name:     "ec2-sap",
@@ -1456,7 +1348,7 @@ func newDistro(distroName string) distro.Distro {
 	defaultGceByosImageConfig := &distro.ImageConfig{
 		Timezone: common.StringToPtr("UTC"),
 		TimeSynchronization: &osbuild.ChronyStageOptions{
-			Timeservers: []string{"metadata.google.internal"},
+			Servers: []osbuild.ChronyConfigServer{{Hostname: "metadata.google.internal"}},
 		},
 		Firewall: &osbuild.FirewallStageOptions{
 			DefaultZone: "trusted",
@@ -1744,6 +1636,7 @@ func newDistro(distroName string) distro.Distro {
 		// add azure to RHEL distro only
 		x86_64.addImageTypes(azureRhuiImgType)
 		x86_64.addImageTypes(azureByosImgType)
+		x86_64.addImageTypes(azureSapImgType(rd))
 
 		// add ec2 image types to RHEL distro only
 		x86_64.addImageTypes(ec2ImgTypeX86_64, ec2HaImgTypeX86_64)

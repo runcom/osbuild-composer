@@ -8,6 +8,8 @@
     embeded_container: "false"
     total_counter: "0"
     failed_counter: "0"
+    firewall_feature: "false"
+    edge_type: "none"
 
   tasks:
     # current target host's IP address
@@ -651,6 +653,13 @@
           set_fact:
             failed_counter: "{{ failed_counter | int + 1 }}"
 
+    - name: check fdo-client-linuxapp logs
+      command: journalctl -u fdo-client-linuxapp
+      register: result_fdo_client_linuxapp_journalctl
+
+    - debug: 
+        var: result_fdo_client_linuxapp_journalctl
+
     # case: check rollback function if boot error found
     - name: install sanely failing health check unit to test red boot status behavior
       block:
@@ -692,6 +701,28 @@
             failed_counter: "{{ failed_counter | int + 1 }}"
       when: skip_rollback_test == "false"
 
+    - name: check journald has persistent logging
+      block:
+        - name: lsit boots
+          shell: journalctl --list-boots
+          register: result_list_boots
+
+        - assert:
+            that:
+              - result_list_boots.stdout_lines | length > 1
+            fail_msg: "journald hasn't persistent logging"
+            success_msg: "journald has persistent logging"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+      when:
+        - skip_rollback_test == "false"
+        - result_rollback is succeeded
+
     # case: check ostree commit after rollback
     - name: check ostree commit after rollback
       block:
@@ -719,6 +750,35 @@
         - skip_rollback_test == "false"
         - result_rollback is succeeded
 
+    - name: check fdo-client-linuxapp logs
+      command: journalctl -u fdo-client-linuxapp
+      register: result_fdo_client_linuxapp_journalctl
+
+    - debug: 
+        var: result_fdo_client_linuxapp_journalctl
+
+    - name: wait for FDO re-encryption
+      block:
+        - shell: cryptsetup luksDump /dev/vda4
+          register: result
+          until: not result.stdout_lines is search("cipher_null-ecb")
+          retries: 30
+          delay: 60
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+      when: fdo_credential == "true"
+
+    - name: check fdo-client-linuxapp logs
+      command: journalctl -u fdo-client-linuxapp
+      register: result_fdo_client_linuxapp_journalctl
+
+    - debug: 
+        var: result_fdo_client_linuxapp_journalctl
 
     # case: check greenboot* services log again
     - name: fallback log should be found here
@@ -779,6 +839,52 @@
       when:
         - skip_rollback_test == "false"
         - result_rollback is succeeded
+
+    # case: checking firewall customizations
+    - name: Check applied firewall customizations
+      block:
+        - name: Ensure firewall customizations applied from blueprint in trusted zone
+          command: firewall-cmd --info-zone=trusted
+          register: result_trusted_zone
+          become: yes
+        - name: Ensure firewall customizations applied from blueprint in work zone
+          command: firewall-cmd --info-zone=work
+          register: result_work_zone
+          become: yes
+
+        - assert:
+            that:
+              - "'192.168.100.51' in result_trusted_zone.stdout"
+              - "'192.168.100.52' in result_work_zone.stdout"
+            fail_msg: "No firewall customizations found"
+            success_msg: "Firewall customizations added from blueprint"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+      when: firewall_feature == "true"
+
+    # case: check grub2 timeout
+    - name: 5 seconds added to grub timeout
+      block:
+        - name: check configured grub default timeout
+          shell: cat /etc/default/grub | grep GRUB_TIMEOUT
+          register: result_grub_timeout
+          become: yes
+        - assert:
+            that:
+              - "'GRUB_TIMEOUT=5' in result_grub_timeout.stdout"
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+      when: edge_type == "edge-simplified-installer"
 
     - assert:
         that:

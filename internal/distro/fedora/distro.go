@@ -72,6 +72,24 @@ var (
 	}
 
 	// Image Definitions
+	imageInstallerImgType = imageType{
+		name:        "image-installer",
+		nameAliases: []string{"fedora-image-installer"},
+		filename:    "installer.iso",
+		mimeType:    "application/x-iso9660-image",
+		packageSets: map[string]packageSetFunc{
+			osPkgsKey:        bareMetalPackageSet,
+			installerPkgsKey: imageInstallerPackageSet,
+		},
+		bootable:         true,
+		bootISO:          true,
+		rpmOstree:        false,
+		image:            imageInstallerImage,
+		buildPipelines:   []string{"build"},
+		payloadPipelines: []string{"os", "anaconda-tree", "rootfs-image", "efiboot-tree", "bootiso-tree"},
+		exports:          []string{"bootiso"},
+	}
+
 	iotCommitImgType = imageType{
 		name:        "iot-commit",
 		nameAliases: []string{"fedora-iot-commit"},
@@ -446,7 +464,7 @@ func (a *architecture) Distro() distro.Distro {
 	return a.distro
 }
 
-type imageFunc func(workload workload.Workload, t *imageType, customizations *blueprint.Customizations, options distro.ImageOptions, packageSets map[string]rpmmd.PackageSet, rng *rand.Rand) (image.ImageKind, error)
+type imageFunc func(workload workload.Workload, t *imageType, customizations *blueprint.Customizations, options distro.ImageOptions, packageSets map[string]rpmmd.PackageSet, containers []container.Spec, rng *rand.Rand) (image.ImageKind, error)
 
 type packageSetFunc func(t *imageType) rpmmd.PackageSet
 
@@ -556,8 +574,24 @@ func (t *imageType) PackageSets(bp blueprint.Blueprint, options distro.ImageOpti
 		logrus.Warn("FIXME: Requesting package sets for iot-installer without a resolved ostree ref. Faking one.")
 	}
 
+	// Similar to above, for edge-commit and edge-container, we need to set an
+	// ImageRef in order to properly initialize the manifest and package
+	// selection.
+	options.OSTree.ImageRef = t.OSTreeRef()
+
+	// create a temporary container spec array with the info from the blueprint
+	// to initialize the manifest
+	containers := make([]container.Spec, len(bp.Containers))
+	for idx := range bp.Containers {
+		containers[idx] = container.Spec{
+			Source:    bp.Containers[idx].Source,
+			TLSVerify: bp.Containers[idx].TLSVerify,
+			LocalName: bp.Containers[idx].Name,
+		}
+	}
+
 	// create a manifest object and instantiate it with the computed packageSetChains
-	manifest, err := t.initializeManifest(&bp, options, globalRepos, packageSets, nil, 0)
+	manifest, err := t.initializeManifest(&bp, options, globalRepos, packageSets, containers, 0)
 	if err != nil {
 		// TODO: handle manifest initialization errors more gracefully, we
 		// refuse to initialize manifests with invalid config.
@@ -656,7 +690,7 @@ func (t *imageType) initializeManifest(bp *blueprint.Blueprint,
 	/* #nosec G404 */
 	rng := rand.New(source)
 
-	img, err := t.image(w, t, bp.Customizations, options, packageSets, rng)
+	img, err := t.image(w, t, bp.Customizations, options, packageSets, containers, rng)
 	if err != nil {
 		return nil, err
 	}
@@ -693,7 +727,8 @@ func (t *imageType) Manifest(customizations *blueprint.Customizations,
 // checkOptions checks the validity and compatibility of options and customizations for the image type.
 func (t *imageType) checkOptions(customizations *blueprint.Customizations, options distro.ImageOptions, containers []container.Spec) error {
 
-	if len(containers) > 0 {
+	// we do not support embedding containers on ostree-derived images, only on commits themselves
+	if len(containers) > 0 && t.rpmOstree && (t.name != "iot-commit" && t.name != "iot-container") {
 		return fmt.Errorf("embedding containers is not supported for %s on %s", t.name, t.arch.distro.name)
 	}
 
@@ -702,8 +737,12 @@ func (t *imageType) checkOptions(customizations *blueprint.Customizations, optio
 		if options.OSTree.FetchChecksum == "" {
 			return fmt.Errorf("boot ISO image type %q requires specifying a URL from which to retrieve the OSTree commit", t.name)
 		}
+	}
 
-		if t.name == "iot-installer" {
+	// BootISO's have limited support for customizations.
+	// TODO: Support kernel name selection for image-installer
+	if t.bootISO {
+		if t.name == "iot-installer" || t.name == "image-installer" {
 			allowed := []string{"User", "Group"}
 			if err := customizations.CheckAllowed(allowed...); err != nil {
 				return fmt.Errorf("unsupported blueprint customizations found for boot ISO image type %q: (allowed: %s)", t.name, strings.Join(allowed, ", "))
@@ -874,6 +913,7 @@ func newDistro(version int) distro.Distro {
 		iotOCIImgType,
 		iotCommitImgType,
 		iotInstallerImgType,
+		imageInstallerImgType,
 	)
 	x86_64.addImageTypes(
 		&platform.X86{
@@ -932,6 +972,7 @@ func newDistro(version int) distro.Distro {
 		iotCommitImgType,
 		iotOCIImgType,
 		iotInstallerImgType,
+		imageInstallerImgType,
 	)
 	aarch64.addImageTypes(
 		&platform.Aarch64{

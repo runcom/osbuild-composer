@@ -10369,7 +10369,8 @@
               "kickstart-modules": [
                 "org.fedoraproject.Anaconda.Modules.Network",
                 "org.fedoraproject.Anaconda.Modules.Payloads",
-                "org.fedoraproject.Anaconda.Modules.Storage"
+                "org.fedoraproject.Anaconda.Modules.Storage",
+                "org.fedoraproject.Anaconda.Modules.Users"
               ]
             }
           },
@@ -10540,7 +10541,7 @@
               "kernel": {
                 "dir": "/images/pxeboot",
                 "opts": [
-                  "inst.ks=hd:LABEL=Fedora-38-BaseOS-x86_64:/ostree.ks"
+                  "inst.ks=hd:LABEL=Fedora-38-BaseOS-x86_64:/osbuild.ks"
                 ]
               },
               "isolabel": "Fedora-38-BaseOS-x86_64",
@@ -10630,7 +10631,7 @@
               "kernel": {
                 "dir": "/images/pxeboot",
                 "opts": [
-                  "inst.ks=hd:LABEL=Fedora-38-BaseOS-x86_64:/ostree.ks"
+                  "inst.ks=hd:LABEL=Fedora-38-BaseOS-x86_64:/osbuild.ks"
                 ]
               }
             }
@@ -10741,7 +10742,7 @@
           {
             "type": "org.osbuild.kickstart",
             "options": {
-              "path": "/ostree.ks",
+              "path": "/osbuild.ks",
               "ostree": {
                 "osname": "fedora",
                 "url": "file:///run/install/repo/ostree/repo",

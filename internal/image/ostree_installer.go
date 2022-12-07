@@ -22,6 +22,8 @@ type OSTreeInstaller struct {
 	Users             []users.User
 	Groups            []users.Group
 
+	SquashfsCompression string
+
 	ISOLabelTempl string
 	Product       string
 	Variant       string
@@ -57,7 +59,8 @@ func (img *OSTreeInstaller) InstantiateManifest(m *manifest.Manifest,
 		img.OSVersion)
 	anacondaPipeline.ExtraPackages = img.ExtraBasePackages.Include
 	anacondaPipeline.ExtraRepos = img.ExtraBasePackages.Repositories
-	anacondaPipeline.Users = len(img.Users)+len(img.Groups) > 0
+	anacondaPipeline.Users = img.Users
+	anacondaPipeline.Groups = img.Groups
 	anacondaPipeline.Variant = img.Variant
 	anacondaPipeline.Biosdevname = (img.Platform.GetArch() == platform.ARCH_X86_64)
 	anacondaPipeline.Checkpoint()
@@ -86,7 +89,7 @@ func (img *OSTreeInstaller) InstantiateManifest(m *manifest.Manifest,
 	bootTreePipeline := manifest.NewEFIBootTree(m, buildPipeline, anacondaPipeline)
 	bootTreePipeline.Platform = img.Platform
 	bootTreePipeline.UEFIVendor = img.Platform.GetUEFIVendor()
-	bootTreePipeline.KSPath = "/ostree.ks"
+	bootTreePipeline.KSPath = kspath
 	bootTreePipeline.ISOLabel = isoLabel
 
 	isoTreePipeline := manifest.NewISOTree(m,
@@ -100,7 +103,12 @@ func (img *OSTreeInstaller) InstantiateManifest(m *manifest.Manifest,
 	isoTreePipeline.OSName = img.OSName
 	isoTreePipeline.Users = img.Users
 	isoTreePipeline.Groups = img.Groups
-	isoTreePipeline.KSPath = "/ostree.ks"
+
+	isoTreePipeline.SquashfsCompression = img.SquashfsCompression
+
+	// For ostree installers, always put the kickstart file in the root of the ISO
+	isoTreePipeline.KSPath = kspath
+	isoTreePipeline.PayloadPath = "/ostree/repo"
 
 	isoTreePipeline.OSTree = &img.Commit
 

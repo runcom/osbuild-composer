@@ -6,7 +6,6 @@ import (
 	"io/ioutil"
 	"path"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -14,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/osbuild/osbuild-composer/internal/blueprint"
+	"github.com/osbuild/osbuild-composer/internal/container"
 	"github.com/osbuild/osbuild-composer/internal/distro"
 	"github.com/osbuild/osbuild-composer/internal/distroregistry"
 	"github.com/osbuild/osbuild-composer/internal/dnfjson"
@@ -48,6 +48,7 @@ func TestDistro_Manifest(t *testing.T, pipelinePath string, prefix string, regis
 			ComposeRequest  *composeRequest                `json:"compose-request"`
 			PackageSpecSets map[string][]rpmmd.PackageSpec `json:"rpmmd"`
 			Manifest        distro.Manifest                `json:"manifest,omitempty"`
+			Containers      []container.Spec               `json:"containers,omitempty"`
 		}
 		file, err := ioutil.ReadFile(fileName)
 		assert.NoErrorf(err, "Could not read test-case '%s': %v", fileName, err)
@@ -87,6 +88,28 @@ func TestDistro_Manifest(t *testing.T, pipelinePath string, prefix string, regis
 				return
 			}
 
+			var ostreeOptions distro.OSTreeImageOptions
+			if ref := imageType.OSTreeRef(); ref != "" {
+				if tt.ComposeRequest.OSTree != nil {
+					ostreeOptions = distro.OSTreeImageOptions{
+						ImageRef:      tt.ComposeRequest.OSTree.Ref,
+						FetchChecksum: tt.ComposeRequest.OSTree.Parent,
+						URL:           tt.ComposeRequest.OSTree.URL,
+					}
+				}
+			}
+			if ostreeOptions.ImageRef == "" { // set image type default if not specified in request
+				ostreeOptions.ImageRef = imageType.OSTreeRef()
+			}
+
+			options := distro.ImageOptions{
+				Size:   imageType.Size(0),
+				OSTree: ostreeOptions,
+				Facts: &distro.FactsImageOptions{
+					ApiType: "test-manifest",
+				},
+			}
+
 			var imgPackageSpecSets map[string][]rpmmd.PackageSpec
 			// depsolve the image's package set to catch changes in the image's default package set.
 			// downside is that this takes long time
@@ -96,13 +119,7 @@ func TestDistro_Manifest(t *testing.T, pipelinePath string, prefix string, regis
 				imgPackageSpecSets = getImageTypePkgSpecSets(
 					imageType,
 					*tt.ComposeRequest.Blueprint,
-					distro.ImageOptions{
-						OSTree: distro.OSTreeImageOptions{
-							URL:           "foo",
-							ImageRef:      "bar",
-							FetchChecksum: "baz",
-						},
-					},
+					options,
 					repos,
 					dnfCacheDir,
 					dnfJsonPath,
@@ -111,25 +128,11 @@ func TestDistro_Manifest(t *testing.T, pipelinePath string, prefix string, regis
 				imgPackageSpecSets = tt.PackageSpecSets
 			}
 
-			ostreeOptions := ostree.RequestParams{
-				Ref: imageType.OSTreeRef(),
-			}
-			if tt.ComposeRequest.OSTree != nil {
-				ostreeOptions = *tt.ComposeRequest.OSTree
-			}
-
 			got, err := imageType.Manifest(tt.ComposeRequest.Blueprint.Customizations,
-				distro.ImageOptions{
-					Size: imageType.Size(0),
-					OSTree: distro.OSTreeImageOptions{
-						URL:           ostreeOptions.URL,
-						ImageRef:      ostreeOptions.Ref,
-						FetchChecksum: ostreeOptions.Parent,
-					},
-				},
+				options,
 				repos,
 				imgPackageSpecSets,
-				nil,
+				tt.Containers,
 				RandomTestSeed)
 
 			if (err == nil && tt.Manifest == nil) || (err != nil && tt.Manifest != nil) {
@@ -167,36 +170,21 @@ func getImageTypePkgSpecSets(imageType distro.ImageType, bp blueprint.Blueprint,
 }
 
 func isOSTree(imgType distro.ImageType) bool {
-	packageSets := imgType.PackageSets(blueprint.Blueprint{}, distro.ImageOptions{
-		OSTree: distro.OSTreeImageOptions{
-			URL:           "foo",
-			ImageRef:      "bar",
-			FetchChecksum: "baz",
-		},
-	}, nil)
-	for _, set := range packageSets["build-packages"] {
-		for _, pkg := range set.Include {
-			if pkg == "rpm-ostree" {
-				return true
-			}
-		}
-	}
-	return false
+	return imgType.OSTreeRef() != ""
 }
 
 var knownKernels = []string{"kernel", "kernel-debug", "kernel-rt"}
 
 // Returns the number of known kernels in the package list
-func kernelCount(imgType distro.ImageType) int {
-	sets := imgType.PackageSets(blueprint.Blueprint{}, distro.ImageOptions{
-		OSTree: distro.OSTreeImageOptions{
-			URL:           "foo",
-			ImageRef:      "bar",
-			FetchChecksum: "baz",
-		},
-	}, nil)
-	n := 0
+func kernelCount(imgType distro.ImageType, bp blueprint.Blueprint) int {
+	sets := imgType.PackageSets(bp, distro.ImageOptions{}, nil)
+
+	// Use a map to count unique kernels in a package set. If the same kernel
+	// name appears twice, it will only be installed once, so we only count it
+	// once.
+	kernels := make(map[string]bool)
 	for _, name := range []string{
+		// payload package set names
 		"os", "ostree-tree", "anaconda-tree",
 		"packages", "installer",
 	} {
@@ -204,41 +192,100 @@ func kernelCount(imgType distro.ImageType) int {
 			for _, pkg := range pset.Include {
 				for _, kernel := range knownKernels {
 					if kernel == pkg {
-						n++
+						kernels[kernel] = true
 					}
 				}
-
+			}
+			if len(kernels) > 0 {
+				// BUG: some RHEL image types contain both 'packages'
+				// and 'installer' even though only 'installer' is used
+				// this counts the kernel package twice. None of these
+				// sets should appear more than once, so return the count
+				// for the first package set that has at least one kernel.
+				return len(kernels)
 			}
 		}
-		if n > 0 {
-			// BUG: some RHEL image types contain both 'packages'
-			// and 'installer' even though only 'installer' is used
-			// this counts the kernel package twice. None of these
-			// sets should appear more than once, so return the count
-			// for the first one that has a kernel.
-			return n
-		}
 	}
-	return n
+	return len(kernels)
 }
 
 func TestDistro_KernelOption(t *testing.T, d distro.Distro) {
-	for _, archName := range d.ListArches() {
-		arch, err := d.GetArch(archName)
-		assert.NoError(t, err)
-		for _, typeName := range arch.ListImageTypes() {
-			imgType, err := arch.GetImageType(typeName)
+	skipList := map[string]bool{
+		// Ostree installers and raw images download a payload to embed or
+		// deploy.  The kernel is part of the payload so it doesn't appear in
+		// the image type's package lists.
+		"iot-installer":             true,
+		"edge-installer":            true,
+		"edge-simplified-installer": true,
+		"iot-raw-image":             true,
+		"edge-raw-image":            true,
+
+		// the tar image type is a minimal image type which is not expected to
+		// be usable without a blueprint (see commit 83a63aaf172f556f6176e6099ffaa2b5357b58f5).
+		"tar": true,
+
+		// containers don't have kernels
+		"container": true,
+
+		// image installer on Fedora doesn't support kernel customizations
+		// on RHEL we support kernel name
+		// TODO: Remove when we unify the allowed options
+		"image-installer": true,
+	}
+
+	{ // empty blueprint: all image types should just have the default kernel
+		for _, archName := range d.ListArches() {
+			arch, err := d.GetArch(archName)
 			assert.NoError(t, err)
-			nk := kernelCount(imgType)
-			// No kernel packages in containers and edge/iot images
-			if strings.HasSuffix(typeName, "container") || strings.HasSuffix(typeName, "edge-raw-image") || strings.HasSuffix(typeName, "iot-raw-image") {
-				continue
+			for _, typeName := range arch.ListImageTypes() {
+				if true {
+					break
+				}
+				if skipList[typeName] {
+					continue
+				}
+				imgType, err := arch.GetImageType(typeName)
+				assert.NoError(t, err)
+				nk := kernelCount(imgType, blueprint.Blueprint{})
+
+				if nk != 1 {
+					assert.Fail(t, fmt.Sprintf("%s Kernel count", d.Name()),
+						"Image type %s (arch %s) specifies %d Kernel packages", typeName, archName, nk)
+				}
 			}
-			// at least one kernel for general image types
-			// exactly one kernel for OSTree commits
-			if nk < 1 || (isOSTree(imgType) && nk != 1) {
-				assert.Fail(t, fmt.Sprintf("%s Kernel count", d.Name()),
-					"Image type %s (arch %s) specifies %d Kernel packages", typeName, archName, nk)
+		}
+	}
+
+	{ // kernel in blueprint: the specified kernel replaces the default
+		for _, kernelName := range []string{"kernel", "kernel-debug"} {
+			bp := blueprint.Blueprint{
+				Customizations: &blueprint.Customizations{
+					Kernel: &blueprint.KernelCustomization{
+						Name: kernelName,
+					},
+				},
+			}
+			for _, archName := range d.ListArches() {
+				arch, err := d.GetArch(archName)
+				assert.NoError(t, err)
+				for _, typeName := range arch.ListImageTypes() {
+					if typeName != "image-installer" {
+						continue
+					}
+					if skipList[typeName] {
+						continue
+					}
+					imgType, err := arch.GetImageType(typeName)
+					assert.NoError(t, err)
+					nk := kernelCount(imgType, bp)
+
+					// ostree image types should have only one kernel
+					// other image types should have at least 1
+					if nk < 1 || (nk != 1 && isOSTree(imgType)) {
+						assert.Fail(t, fmt.Sprintf("%s Kernel count", d.Name()),
+							"Image type %s (arch %s) specifies %d Kernel packages", typeName, archName, nk)
+					}
+				}
 			}
 		}
 	}
